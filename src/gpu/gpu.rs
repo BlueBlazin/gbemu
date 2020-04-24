@@ -1,5 +1,8 @@
+use crate::cpu::EmulationMode;
+
 const VRAM_SIZE: usize = 0x2000;
 const OAM_SIZE: usize = 0xA0;
+const PALETTE_RAM_SIZE: usize = 0x40;
 const SCREEN_WIDTH: usize = 160;
 const SCREEN_HEIGHT: usize = 144;
 const SCREEN_DEPTH: usize = 4;
@@ -57,6 +60,13 @@ enum PixelType {
 pub struct Gpu {
     pub screen: Vec<u8>,
     pub vram: Vec<u8>,
+    pub bgp_ram: Vec<u8>,
+    pub obp_ram: Vec<u8>,
+    bgp_idx: u8,
+    bgp_auto_incr: bool,
+    obp_idx: u8,
+    obp_auto_incr: bool,
+    emu_mode: EmulationMode,
     oam: Vec<u8>,
     pixel_types: Vec<PixelType>,
     scroll_x: u8,
@@ -88,7 +98,7 @@ pub struct Gpu {
 }
 
 impl Gpu {
-    pub fn new() -> Self {
+    pub fn new(emu_mode: EmulationMode) -> Self {
         let mut pixel_types = vec![];
         for _ in 0..SCREEN_WIDTH {
             pixel_types.push(PixelType::BgColor0);
@@ -97,7 +107,14 @@ impl Gpu {
         Gpu {
             screen: vec![0; SCREEN_HEIGHT * SCREEN_WIDTH * SCREEN_DEPTH],
             vram: vec![0; VRAM_SIZE],
+            bgp_ram: vec![0; PALETTE_RAM_SIZE],
+            obp_ram: vec![0; PALETTE_RAM_SIZE],
             oam: vec![0; OAM_SIZE],
+            bgp_idx: 0,
+            bgp_auto_incr: false,
+            obp_idx: 0,
+            obp_auto_incr: false,
+            emu_mode,
             pixel_types,
             scroll_x: 0,
             scroll_y: 0,
@@ -423,6 +440,26 @@ impl Gpu {
                 // The value is window_x - 7.
                 self.window_x = value + 7;
             }
+            0xFF68 if self.emu_mode == EmulationMode::Cgb => {
+                self.bgp_idx = value & 0x3F;
+                self.bgp_auto_incr = (value & 0x80) != 0;
+            }
+            0xFF69 if self.emu_mode == EmulationMode::Cgb => {
+                self.bgp_ram[self.bgp_idx as usize] = value;
+                if self.bgp_auto_incr {
+                    self.bgp_idx = (self.bgp_idx + 1) % 0x40;
+                }
+            }
+            0xFF6A if self.emu_mode == EmulationMode::Cgb => {
+                self.obp_idx = value & 0x3F;
+                self.obp_auto_incr = (value & 0x80) != 0;
+            }
+            0xFF6B if self.emu_mode == EmulationMode::Cgb => {
+                self.obp_ram[self.bgp_idx as usize] = value;
+                if self.obp_auto_incr {
+                    self.obp_idx = (self.obp_idx + 1) % 0x40;
+                }
+            }
             _ => panic!("Unexpected addr in gpu.set_byte"),
         }
     }
@@ -466,6 +503,14 @@ impl Gpu {
             0xFF49 => self.obp1,
             0xFF4A => self.window_y,
             0xFF4B => self.window_x,
+            0xFF68 if self.emu_mode == EmulationMode::Cgb => {
+                (self.bgp_auto_incr as u8) << 7 | self.bgp_idx
+            }
+            0xFF69 if self.emu_mode == EmulationMode::Cgb => self.bgp_ram[self.bgp_idx as usize],
+            0xFF6A if self.emu_mode == EmulationMode::Cgb => {
+                (self.obp_auto_incr as u8) << 7 | self.obp_idx
+            }
+            0xFF6B if self.emu_mode == EmulationMode::Cgb => self.obp_ram[self.obp_idx as usize],
             _ => panic!("Unexpected addr in gpu.get_byte"),
         }
     }

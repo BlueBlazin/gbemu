@@ -45,7 +45,6 @@ impl Emulator {
             cycles += self.cpu.tick();
         }
         self.play_audio();
-        // self.cpu.mmu.apu.reset();
     }
 
     #[allow(unused_variables)]
