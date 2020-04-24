@@ -1,0 +1,101 @@
+body {
+  background-color: #5f75a5;
+}
+
+#gbemu-canvas {
+  /* border: 1px solid black; */
+  /* image-rendering: pixelated; */
+  padding: 1px;
+  width: 320px;
+  height: 280px;
+}
+
+.container {
+  display: flex;
+  justify-content: center;
+  margin-top: 30px;
+}
+
+.canvas-container {
+  height: 525px;
+  padding: 20px;
+  background-color: #ccc;
+  /* background-color: #93bb82; */
+  /* background-color: #081721; */
+  /* background-color: #cadfbb; */
+  /* background-color: #d0bbdf; */
+  border-radius: 10px;
+  border-bottom-right-radius: 75px;
+}
+
+canvas {
+  box-sizing: border-box;
+  image-rendering: optimizeSpeed; /* Older versions of FF */
+  image-rendering: -moz-crisp-edges; /* FF 6.0+ */
+  image-rendering: -webkit-optimize-contrast; /* Safari */
+  image-rendering: -o-crisp-edges; /* OS X & Windows Opera (12.02+) */
+  image-rendering: pixelated; /* Awesome future-browsers */
+  -ms-interpolation-mode: nearest-neighbor; /* IE */
+}
+
+.buttons-container {
+}
+
+.buttons {
+  padding: 25px 15px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.keypad {
+  width: 75px;
+}
+
+.keypad-mid-section {
+  display: flex;
+}
+
+.btn {
+  width: 25px;
+  height: 25px;
+  background-color: black;
+  margin: 0 auto;
+}
+
+.circle-btn-container {
+  transform: rotate(35deg);
+}
+
+.circle-btn {
+  width: 45px;
+  height: 45px;
+  border-radius: 50%;
+  color: white;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin: 0 10px;
+  margin-bottom: 10px;
+}
+
+.circle-a {
+  background-color: rgb(255, 66, 66);
+}
+
+.circle-b {
+  background-color: rgb(255, 66, 66);
+}
+
+.long-btn-container {
+  display: flex;
+  justify-content: center;
+}
+
+.long-btn {
+  width: 55px;
+  height: 15px;
+  background-color: #888;
+  margin: 5px;
+  transform: rotate(-20deg);
+  border-radius: 5px;
+}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Hello wasm-pack!</title>
+    <link rel="stylesheet" href="style.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <noscript>Enable javascript to view.</noscript>
+    <div class="container">
+      <div class="canvas-container">
+        <div>
+          <input type="file" id="input" />
+        </div>
+        <canvas id="gbemu-canvas"></canvas>
+        <div class="buttons-container">
+          <div class="buttons">
+            <div class="keypad">
+              <div class="btn up"></div>
+              <div class="keypad-mid-section">
+                <div class="btn left"></div>
+                <div class="btn mid"></div>
+                <div class="btn right"></div>
+              </div>
+              <div class="btn down"></div>
+            </div>
+
+            <div class="circle-btn-container">
+              <div class="circle-btn circle-a"></div>
+              <div class="circle-btn circle-b"></div>
+            </div>
+          </div>
+          <div class="long-btn-container">
+            <div class="long-btn"></div>
+            <div class="long-btn"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="./bootstrap.js"></script>
+  </body>
+</html>
