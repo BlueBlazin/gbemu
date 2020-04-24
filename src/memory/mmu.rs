@@ -7,7 +7,7 @@ use crate::memory::bootrom::Bootrom;
 use crate::timer::timer::Timer;
 
 const WRAM_SIZE: usize = 0x2000;
-const HRAM_SIZE: usize = 0x7F;
+const HRAM_SIZE: usize = 0x007F;
 const ERAM_SIZE: usize = 0x2000;
 const HRAM_OFFSET: u16 = 0xFF80;
 const WRAM_OFFSET: u16 = 0xC000;
@@ -32,10 +32,10 @@ pub struct Mmu {
 }
 
 impl Mmu {
-    pub fn new() -> Self {
+    pub fn new(data: Vec<u8>) -> Self {
         Mmu {
             bootrom: Bootrom::new(),
-            cartridge: Cartridge::new(),
+            cartridge: Cartridge::new(data),
             eram: vec![0; ERAM_SIZE],
             gpu: Gpu::new(),
             joypad: Joypad::new(),
@@ -46,10 +46,6 @@ impl Mmu {
             serial_out: 0,
             apu: Apu::new(),
         }
-    }
-
-    pub fn load_rom(&mut self, rom: Vec<u8>) {
-        self.cartridge.load(rom);
     }
 
     pub fn apu_tick(&mut self, cycles: usize) {
@@ -144,7 +140,7 @@ impl Mmu {
             0xFF00..=0xFF3F => match addr {
                 0xFF00 => self.joypad.set_byte(addr, value),
                 0xFF01 => {
-                    // println!("Serial out: {}", value as char);
+                    println!("Serial out: {}", value as char);
                     self.serial_out = value;
                 }
                 0xFF04..=0xFF07 => self.timer.set_byte(addr, value),

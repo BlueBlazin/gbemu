@@ -49,12 +49,12 @@ pub struct Cpu {
 }
 
 impl Cpu {
-    pub fn new() -> Self {
+    pub fn new(data: Vec<u8>) -> Self {
         Cpu {
             r: [0; 8],
             pc: 0,
             sp: 0,
-            mmu: Mmu::new(),
+            mmu: Mmu::new(data),
             cycles: 0,
             ime: true,
             halted: false,
@@ -1150,7 +1150,7 @@ mod tests {
     // Test Atomics
     #[test]
     fn test_imm16() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.memory_set(0xC000 + 0, 0xFE);
         cpu.memory_set(0xC000 + 1, 0xFF);
         cpu.pc = 0xC000;
@@ -1159,14 +1159,14 @@ mod tests {
 
     #[test]
     fn test_memory_get_set() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.memory_set(0xC000, 0xFF);
         assert_eq!(cpu.memory_get(0xC000), 0xFF);
     }
 
     #[test]
     fn test_r16_get_set() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.set_r16(R16::AF, 1);
         cpu.set_r16(R16::BC, 2);
         cpu.set_r16(R16::DE, 3);
@@ -1181,7 +1181,7 @@ mod tests {
 
     #[test]
     fn test_r8_get_set() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.set_r8(R8::A, 1);
         cpu.set_r8(R8::B, 2);
         cpu.set_r8(R8::C, 3);
@@ -1203,7 +1203,7 @@ mod tests {
 
     #[test]
     fn test_fetch() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.memory_set(0xC000 + 0, 0xAA);
         cpu.memory_set(0xC000 + 1, 0xBB);
         cpu.memory_set(0xC000 + 2, 0xCC);
@@ -1221,7 +1221,7 @@ mod tests {
 
     #[test]
     fn test_stack() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.push(1);
         cpu.push(2);
         cpu.push(3);
@@ -1232,7 +1232,7 @@ mod tests {
 
     #[test]
     fn test_get_imm_8() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.pc = 0xC000;
         cpu.memory_set(0xC000, 0x01);
         assert_eq!(cpu.get_imm8(), 0x01);
@@ -1240,7 +1240,7 @@ mod tests {
 
     #[test]
     fn test_get_imm_16() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.pc = 0xC000;
         cpu.memory_set(0xC000 + 0, 0x01);
         cpu.memory_set(0xC000 + 1, 0x02);
@@ -1249,7 +1249,7 @@ mod tests {
 
     #[test]
     fn test_get_set_addr() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.set_r16(R16::AF, 0xC000 + 0);
         cpu.set_r16(R16::BC, 0xC000 + 1);
         cpu.set_r16(R16::DE, 0xC000 + 2);
@@ -1270,7 +1270,7 @@ mod tests {
 
     #[test]
     fn test_get_addr_inc_dec() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.memory_set(0xC000, 7);
         cpu.memory_set(0xC000 + 1, 10);
         cpu.set_r16(R16::HL, 0xC000);
@@ -1282,7 +1282,7 @@ mod tests {
 
     #[test]
     fn test_set_addr_inc_dec() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.set_r16(R16::HL, 0xC000);
         cpu.set_addr_inc(7);
         assert_eq!(cpu.memory_get(0xC000), 7);
@@ -1294,7 +1294,7 @@ mod tests {
 
     #[test]
     fn test_get_flag() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.set_r8(R8::F, 0b10100000);
         assert_eq!(cpu.get_flag(Flag::Z), 1);
         assert_eq!(cpu.get_flag(Flag::N), 0);
@@ -1304,7 +1304,7 @@ mod tests {
 
     #[test]
     fn test_set_flag() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
 
         cpu.set_flag(Flag::Z);
         cpu.reset_flag(Flag::N);
@@ -1319,7 +1319,7 @@ mod tests {
 
     #[test]
     fn test_push_pop_r16() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.set_r16(R16::AF, 0xAB);
         cpu.set_r16(R16::BC, 0xCD);
         cpu.push_r16(R16::AF);
@@ -1334,7 +1334,7 @@ mod tests {
 
     #[test]
     fn test_dec_r8() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.set_r8(R8::D, 1);
         cpu.dec_r8(R8::D);
         assert_eq!(cpu.get_r8(&R8::D), 0);
@@ -1345,7 +1345,7 @@ mod tests {
 
     #[test]
     fn test_jr() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::new(vec![0; 0x8000]);
         cpu.pc = 0xC000;
         cpu.set_addr_imm(0xC000 + 1, 0x1);
         cpu.set_r8(R8::D, 1);
@@ -1356,9 +1356,8 @@ mod tests {
 
     #[test]
     fn test_blargg() {
-        let mut cpu = Cpu::new();
         let rom = fs::read("roms/romname").unwrap();
-        cpu.mmu.load_rom(rom);
+        let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         let mut flag = true;
         loop {

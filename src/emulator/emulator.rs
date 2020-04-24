@@ -25,22 +25,18 @@ pub struct Emulator {
 
 #[wasm_bindgen]
 impl Emulator {
-    pub fn new() -> Self {
-        let mut cpu = Cpu::new();
+    pub fn new(data: Vec<u8>) -> Self {
+        let mut cpu = Cpu::new(data);
 
         let ctx = AudioContext::new().unwrap();
 
         cpu.simulate_bootrom();
-        // cpu.emulate_bootrom();
+
         Emulator {
             cpu,
             ctx,
             start_time: None,
         }
-    }
-
-    pub fn load(&mut self, data: Vec<u8>) {
-        self.cpu.mmu.load_rom(data);
     }
 
     pub fn update(&mut self) {
@@ -52,6 +48,7 @@ impl Emulator {
         // self.cpu.mmu.apu.reset();
     }
 
+    #[allow(unused_variables)]
     fn play_audio(&mut self) {
         let start = match self.start_time {
             None => self.ctx.current_time(),

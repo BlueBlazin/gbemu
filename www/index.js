@@ -44,8 +44,7 @@ let keydownHandler;
 let keyupHandler;
 
 function emulate(romData) {
-  const gb = Emulator.new();
-  gb.load(romData);
+  const gb = Emulator.new(romData);
 
   keydownHandler = window.addEventListener("keydown", (event) => {
     switch (event.keyCode) {
