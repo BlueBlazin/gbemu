@@ -1,6 +1,7 @@
 use crate::cpu::EmulationMode;
 
-const VRAM_SIZE: usize = 0x2000;
+const VRAM_SIZE: usize = 0x4000;
+const VRAM_BANK_SIZE: usize = 0x2000;
 const OAM_SIZE: usize = 0xA0;
 const PALETTE_RAM_SIZE: usize = 0x40;
 const SCREEN_WIDTH: usize = 160;
@@ -36,6 +37,8 @@ struct Sprite {
     pub flip_vertical: bool,
     pub flip_horizontal: bool,
     pub obp1: bool,
+    pub vram_bank: usize,
+    pub obp_num: usize,
 }
 
 impl From<&[u8]> for Sprite {
@@ -48,6 +51,28 @@ impl From<&[u8]> for Sprite {
             flip_vertical: (bytes[3] & 0x40) != 0,
             flip_horizontal: (bytes[3] & 0x20) != 0,
             obp1: (bytes[3] & 0x10) != 0,
+            vram_bank: ((bytes[3] & 0x08) >> 2) as usize,
+            obp_num: (bytes[3] & 0x07) as usize,
+        }
+    }
+}
+
+struct BgAttr {
+    bgp_num: usize,
+    vram_bank: usize,
+    mirror_horizontal: bool,
+    mirror_vertical: bool,
+    has_priority: bool,
+}
+
+impl From<u8> for BgAttr {
+    fn from(value: u8) -> Self {
+        Self {
+            bgp_num: (value & 0x07) as usize,
+            vram_bank: ((value & 0x08) >> 3) as usize,
+            mirror_horizontal: (value & 0x20) != 0,
+            mirror_vertical: (value & 0x40) != 0,
+            has_priority: (value & 0x80) != 0,
         }
     }
 }
@@ -97,6 +122,7 @@ pub struct Gpu {
     pub request_vblank_int: bool,
     pub request_lcd_int: bool,
     pub gdma_active: bool,
+    vram_bank: usize,
 }
 
 impl Gpu {
@@ -145,6 +171,7 @@ impl Gpu {
             request_vblank_int: false,
             request_lcd_int: false,
             gdma_active: false,
+            vram_bank: 0,
         }
     }
 
@@ -403,7 +430,10 @@ impl Gpu {
         match addr {
             0x8000..=0x9FFF => match self.mode {
                 GpuMode::PixelTransfer if !self.gdma_active => (),
-                _ => self.vram[(addr - VRAM_OFFSET) as usize] = value,
+                _ => {
+                    let addr = self.vram_bank * VRAM_BANK_SIZE + (addr - VRAM_OFFSET) as usize;
+                    self.vram[addr] = value;
+                }
             },
             0xFE00..=0xFE9F => match self.mode {
                 GpuMode::OamSearch | GpuMode::PixelTransfer => (),
@@ -443,6 +473,7 @@ impl Gpu {
                 // The value is window_x - 7.
                 self.window_x = value + 7;
             }
+            0xFF4F => self.vram_bank = (value & 0x01) as usize,
             0xFF68 if self.emu_mode == EmulationMode::Cgb => {
                 self.bgp_idx = value & 0x3F;
                 self.bgp_auto_incr = (value & 0x80) != 0;
@@ -471,7 +502,10 @@ impl Gpu {
         match addr {
             0x8000..=0x9FFF => match self.mode {
                 GpuMode::PixelTransfer => 0x00,
-                _ => self.vram[(addr - VRAM_OFFSET) as usize],
+                _ => {
+                    let addr = self.vram_bank * VRAM_BANK_SIZE + (addr - VRAM_OFFSET) as usize;
+                    self.vram[addr]
+                }
             },
             0xFE00..=0xFE9F => match self.mode {
                 GpuMode::OamSearch | GpuMode::PixelTransfer => 0x00,
@@ -506,6 +540,7 @@ impl Gpu {
             0xFF49 => self.obp1,
             0xFF4A => self.window_y,
             0xFF4B => self.window_x,
+            0xFF4F => 0xFE | self.vram_bank as u8,
             0xFF68 if self.emu_mode == EmulationMode::Cgb => {
                 (self.bgp_auto_incr as u8) << 7 | self.bgp_idx
             }

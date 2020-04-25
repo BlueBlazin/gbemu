@@ -161,6 +161,7 @@ impl Mmu {
             0xFF46 => 0xFF,
             0xFF47..=0xFF4B => self.gpu.get_byte(addr),
             0xFF4C..=0xFF7F => match addr {
+                0xFF4F => self.gpu.get_byte(addr),
                 0xFF55 => match self.dma {
                     DmaType::GpDma | DmaType::HBlankDma => 0x01,
                     _ => 0x00,
@@ -214,7 +215,8 @@ impl Mmu {
             0xFF40..=0xFF45 => self.gpu.set_byte(addr, value),
             0xFF46 => self.launch_dma_transfer(value),
             0xFF47..=0xFF4B => self.gpu.set_byte(addr, value),
-            0xFF4C..=0xFF4F => println!("Writing to io ports {:#X}", addr),
+            0xFF4C..=0xFF4E => println!("Writing to io ports {:#X}", addr),
+            0xFF4F => self.gpu.set_byte(addr, value),
             0xFF50 => {
                 if self.bootrom.is_active && value == 1 {
                     self.bootrom.deactivate();
