@@ -1,5 +1,5 @@
 use crate::joypad::joypad::Key;
-use crate::memory::mmu::Mmu;
+use crate::memory::mmu::{DmaType, Mmu};
 
 /// The 8 bit registers.
 pub enum R8 {
@@ -97,15 +97,25 @@ impl Cpu {
         self.cycles = 0;
 
         // Fetch Decode Execute
-        if !self.halted {
-            let opcode = self.fetch();
-            self.decode_exec(opcode);
-        } else {
+        // if !self.halted {
+        //     let opcode = self.fetch();
+        //     self.decode_exec(opcode);
+        // } else {
+        //     self.cycles += 4;
+        // }
+
+        if self.halted {
             self.cycles += 4;
+        } else {
+            match self.mmu.dma {
+                DmaType::GpDma => self.gdma_tick(),
+                DmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
+                _ => self.cpu_tick(),
+            }
         }
 
         // Service Interrupts
-        self.service_interrupts();
+        // self.service_interrupts();
 
         // Step Timers
         self.mmu.timer_tick(self.cycles);
@@ -117,6 +127,21 @@ impl Cpu {
         self.mmu.apu_tick(self.cycles);
 
         self.cycles
+    }
+
+    fn cpu_tick(&mut self) {
+        let opcode = self.fetch();
+        self.decode_exec(opcode);
+        // Service Interrupts
+        self.service_interrupts();
+    }
+
+    fn gdma_tick(&mut self) {
+        self.cycles += self.mmu.gdma_tick();
+    }
+
+    fn hdma_tick(&mut self) {
+        self.cycles += self.mmu.hdma_tick();
     }
 
     fn service_interrupts(&mut self) {

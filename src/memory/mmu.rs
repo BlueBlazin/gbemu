@@ -2,7 +2,7 @@
 use crate::apu::apu::Apu;
 use crate::cartridge::cartridge::Cartridge;
 use crate::cpu::EmulationMode;
-use crate::gpu::gpu::Gpu;
+use crate::gpu::gpu::{Gpu, GpuMode};
 use crate::joypad::joypad::Joypad;
 use crate::memory::bootrom::Bootrom;
 use crate::memory::wram::Wram;
@@ -12,6 +12,12 @@ const HRAM_SIZE: usize = 0x007F;
 const HRAM_OFFSET: u16 = 0xFF80;
 const WRAM_OFFSET: u16 = 0xC000;
 const ECHO_OFFSET: u16 = 0xE000;
+
+pub enum DmaType {
+    NoDma,
+    HBlankDma,
+    GpDma,
+}
 
 /// Memory Management Unit (MMU)
 /// The MMU is responsible for all basic memory operations
@@ -23,10 +29,15 @@ pub struct Mmu {
     pub joypad: Joypad,
     pub apu: Apu,
     pub ie: u8,
+    pub dma: DmaType,
     timer: Timer,
     wram: Wram,
     hram: [u8; HRAM_SIZE],
     serial_out: u8,
+    dma_src: u16,
+    dma_dst: u16,
+    hdma_ptr: u16,
+    transfer_length: usize,
 }
 
 impl Mmu {
@@ -38,11 +49,55 @@ impl Mmu {
             joypad: Joypad::new(),
             apu: Apu::new(),
             ie: 0,
+            dma: DmaType::NoDma,
             timer: Timer::new(),
             wram: Wram::new(),
             hram: [0; HRAM_SIZE],
             serial_out: 0,
+            dma_src: 0,
+            dma_dst: 0,
+            hdma_ptr: 0,
+            transfer_length: 0,
         }
+    }
+
+    pub fn in_hblank(&self) -> bool {
+        self.gpu.mode == GpuMode::HBlank
+    }
+
+    pub fn gdma_tick(&mut self) -> usize {
+        let src_addr = self.dma_src & 0xFFF0;
+        let dst_addr = self.dma_dst & 0x1FF0;
+        self.gpu.gdma_active = true;
+
+        for _ in 0..self.transfer_length {
+            let value = self.get_byte(src_addr);
+            self.set_byte(dst_addr, value);
+        }
+
+        self.dma = DmaType::NoDma;
+        self.gpu.gdma_active = false;
+
+        4 * self.transfer_length
+    }
+
+    pub fn hdma_tick(&mut self) -> usize {
+        let src_addr = self.dma_src & 0xFFF0;
+        let dst_addr = self.dma_dst & 0x1FF0;
+
+        for _ in 0..16 {
+            let value = self.get_byte(src_addr + self.hdma_ptr);
+            self.set_byte(dst_addr, value);
+        }
+
+        self.hdma_ptr += 0x10;
+
+        if self.hdma_ptr as usize >= self.transfer_length {
+            self.hdma_ptr = 0;
+            self.dma = DmaType::NoDma;
+        }
+
+        4 * 16
     }
 
     pub fn apu_tick(&mut self, cycles: usize) {
@@ -106,6 +161,10 @@ impl Mmu {
             0xFF46 => 0xFF,
             0xFF47..=0xFF4B => self.gpu.get_byte(addr),
             0xFF4C..=0xFF7F => match addr {
+                0xFF55 => match self.dma {
+                    DmaType::GpDma | DmaType::HBlankDma => 0x01,
+                    _ => 0x00,
+                },
                 0xFF68..=0xFF6B => self.gpu.get_byte(addr),
                 _ => {
                     println!("Read from io ports {:#X}", addr);
@@ -164,6 +223,17 @@ impl Mmu {
                 }
             }
             0xFF51..=0xFF7F => match addr {
+                0xFF51 => self.dma_src = (self.dma_src & 0x00FF) | (value as u16) << 8,
+                0xFF52 => self.dma_src = (self.dma_src & 0xFF00) | value as u16,
+                0xFF53 => self.dma_dst = (self.dma_dst & 0x00FF) | (value as u16) << 8,
+                0xFF54 => self.dma_dst = (self.dma_dst & 0xFF00) | value as u16,
+                0xFF55 => {
+                    self.dma = match value & 0x80 {
+                        0x00 => DmaType::GpDma,
+                        _ => DmaType::HBlankDma,
+                    };
+                    self.transfer_length = ((value & 0x7F) as usize + 1) * 0x10;
+                }
                 0xFF68..=0xFF6B => self.gpu.set_byte(addr, value),
                 _ => (),
             }, //println!("Write to io ports {:#X}", addr),

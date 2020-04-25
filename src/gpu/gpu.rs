@@ -9,6 +9,7 @@ const SCREEN_DEPTH: usize = 4;
 const VRAM_OFFSET: u16 = 0x8000;
 const OAM_OFFSET: u16 = 0xFE00;
 
+#[derive(Debug, PartialEq)]
 pub enum GpuMode {
     OamSearch,
     PixelTransfer,
@@ -84,7 +85,7 @@ pub struct Gpu {
     bgp: u8,
     obp0: u8,
     obp1: u8,
-    mode: GpuMode,
+    pub mode: GpuMode,
     ly: u8,
     lyc: u8,
     lyc_int: u8,
@@ -95,6 +96,7 @@ pub struct Gpu {
     clock: usize,
     pub request_vblank_int: bool,
     pub request_lcd_int: bool,
+    pub gdma_active: bool,
 }
 
 impl Gpu {
@@ -142,6 +144,7 @@ impl Gpu {
             clock: 0,
             request_vblank_int: false,
             request_lcd_int: false,
+            gdma_active: false,
         }
     }
 
@@ -399,7 +402,7 @@ impl Gpu {
     pub fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
             0x8000..=0x9FFF => match self.mode {
-                GpuMode::PixelTransfer => (),
+                GpuMode::PixelTransfer if !self.gdma_active => (),
                 _ => self.vram[(addr - VRAM_OFFSET) as usize] = value,
             },
             0xFE00..=0xFE9F => match self.mode {
