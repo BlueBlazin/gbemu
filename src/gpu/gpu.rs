@@ -1,4 +1,6 @@
 use crate::cpu::EmulationMode;
+use std::cmp::Ordering;
+use std::collections::BinaryHeap;
 
 const VRAM_SIZE: usize = 0x4000;
 const VRAM_BANK_SIZE: usize = 0x2000;
@@ -29,6 +31,7 @@ impl From<&GpuMode> for u8 {
     }
 }
 
+#[derive(Eq)]
 struct Sprite {
     pub y: i32,
     pub x: i32,
@@ -39,6 +42,24 @@ struct Sprite {
     pub obp1: bool,
     pub vram_bank: usize,
     pub obp_num: usize,
+}
+
+impl Ord for Sprite {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.x.cmp(&other.x)
+    }
+}
+
+impl PartialOrd for Sprite {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq for Sprite {
+    fn eq(&self, other: &Self) -> bool {
+        self.x == other.x
+    }
 }
 
 impl From<&[u8]> for Sprite {
@@ -260,6 +281,74 @@ impl Gpu {
     }
 
     fn draw_line_sprites(&mut self) {
+        let height = if self.obj_size == 0 { 8i32 } else { 16i32 };
+        let ly = self.ly as i32;
+
+        let sprites: Vec<_> = (0..40)
+            .map(|i| (Sprite::from(&self.oam[i * 4..(i + 1) * 4]), 40 - i))
+            .filter(|(s, _)| (ly >= s.y) && (ly < s.y + height))
+            .collect::<BinaryHeap<_>>()
+            .into_sorted_vec()
+            .into_iter()
+            .take(10)
+            .collect();
+
+        for (sprite, idx) in sprites.into_iter() {
+            let i = idx + 40;
+            if (sprite.x >= -7) && (sprite.x < SCREEN_WIDTH as i32) {
+                let row = if sprite.flip_vertical {
+                    (height - 1 - (ly - sprite.y)) as u16
+                } else {
+                    (ly - sprite.y) as u16
+                };
+
+                let tilenum = if self.obj_size != 0 {
+                    sprite.number & 0xFE
+                } else {
+                    sprite.number
+                };
+
+                let tile_addr = 0x8000u16 + tilenum * 16 + row * 2;
+                let lower = self.get_byte(tile_addr + 0);
+                let upper = self.get_byte(tile_addr + 1);
+
+                for j in 0..8 {
+                    if (sprite.x + j >= 0) && (sprite.x + j < (SCREEN_WIDTH as i32)) {
+                        let value = if sprite.flip_horizontal {
+                            let mask = 0x01 << j;
+                            (((upper & mask) != 0) as u8) << 1 | (((lower) & mask) != 0) as u8
+                        } else {
+                            let mask = 0x80 >> j;
+                            (((upper & mask) != 0) as u8) << 1 | ((lower & mask) != 0) as u8
+                        };
+
+                        let below_bg = !sprite.has_priority
+                            && (self.pixel_types[(sprite.x + j) as usize] != PixelType::BgColor0);
+
+                        if (value != 0) && !below_bg {
+                            let x = (sprite.x + j) as usize;
+                            let palette = if sprite.obp1 { self.obp1 } else { self.obp0 };
+                            let (r, g, b) = self.get_rgb(value, palette);
+                            self.screen[ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
+                                + x * SCREEN_DEPTH
+                                + 0] = r;
+                            self.screen[ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
+                                + x * SCREEN_DEPTH
+                                + 1] = g;
+                            self.screen[ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
+                                + x * SCREEN_DEPTH
+                                + 2] = b;
+                            self.screen[ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
+                                + i * SCREEN_DEPTH
+                                + 3] = 255;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn draw_line_sprites2(&mut self) {
         for i in (0..40).rev() {
             let sprite = Sprite::from(&self.oam[i * 4..(i + 1) * 4]);
             let height = if self.obj_size == 0 { 8i32 } else { 16i32 };
