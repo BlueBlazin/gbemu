@@ -53,7 +53,7 @@ impl Mbc for Mbc1 {
                 if !self.ram_enabled {
                     return 0xFF;
                 }
-                let addr = RAM_OFFSET + self.ram_bank as usize * RAM_BANK_SIZE;
+                let addr = self.ram_bank as usize * RAM_BANK_SIZE + (addr as usize - RAM_OFFSET);
                 self.ram[addr]
             }
             _ => panic!("Address out of bounds."),
@@ -73,10 +73,7 @@ impl Mbc for Mbc1 {
             }
             0x4000..=0x5FFF => match self.mode {
                 Mode::RomBanking => {
-                    self.rom_bank = match value & 0x03 {
-                        0x00 => (self.rom_bank & 0x1F) | 0x01 << 5,
-                        hi => (self.rom_bank & 0x1F) | hi << 5,
-                    };
+                    self.rom_bank = (value & 0x03) << 5 | self.rom_bank;
                 }
                 Mode::RamBanking => {
                     self.ram_bank = value & 0x03;
@@ -90,11 +87,12 @@ impl Mbc for Mbc1 {
             }
             0xA000..=0xBFFF => {
                 if self.ram_enabled {
-                    let addr = RAM_OFFSET as usize + self.ram_bank as usize * RAM_BANK_SIZE;
+                    let addr =
+                        self.ram_bank as usize * RAM_BANK_SIZE + (addr as usize - RAM_OFFSET);
                     self.ram[addr] = value;
                 }
             }
-            _ => (),
+            _ => panic!("Address out of bounds."),
         }
     }
 }

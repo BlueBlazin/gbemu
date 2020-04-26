@@ -113,6 +113,7 @@ enum PixelType {
 pub struct Gpu {
     pub screen: Vec<u8>,
     pub vram: Vec<u8>,
+    pub vram2: Vec<u8>,
     pub bgp_ram: Vec<u8>,
     pub obp_ram: Vec<u8>,
     bgp_idx: u8,
@@ -162,6 +163,7 @@ impl Gpu {
         Gpu {
             screen: vec![0; SCREEN_HEIGHT * SCREEN_WIDTH * SCREEN_DEPTH],
             vram: vec![0; VRAM_SIZE],
+            vram2: vec![0; VRAM_BANK_SIZE],
             bgp_ram: vec![0; PALETTE_RAM_SIZE],
             obp_ram: vec![0; PALETTE_RAM_SIZE],
             oam: vec![0; OAM_SIZE],
@@ -255,7 +257,10 @@ impl Gpu {
         // set pixel value
         let row = (ly % 8) as u16;
         let col = lx % 8;
-        self.set_bg_pixel(addr, row, col, i);
+        match self.emu_mode {
+            EmulationMode::Dmg => self.set_bg_pixel(addr, row, col, i),
+            EmulationMode::Cgb => self.set_cgb_bg_pixel(addr, row, col, i, tilemap_addr),
+        }
     }
 
     fn put_bg_pixel(&mut self, i: usize) {
@@ -276,7 +281,26 @@ impl Gpu {
         // set pixel value
         let row = (sy.wrapping_add(ly) % 8) as u16;
         let col = sx.wrapping_add(cx) % 8;
-        self.set_bg_pixel(addr, row, col, i);
+        match self.emu_mode {
+            EmulationMode::Dmg => self.set_bg_pixel(addr, row, col, i),
+            EmulationMode::Cgb => self.set_cgb_bg_pixel(addr, row, col, i, tilemap_addr),
+        }
+    }
+
+    fn set_cgb_bg_pixel(&mut self, addr: u16, row: u16, col: u8, i: usize, tilemap_addr: u16) {
+        let tile_attr_addr = VRAM_BANK_SIZE as u16 + tilemap_addr;
+        let tile_attr = BgAttr::from(self.get_byte(tile_attr_addr));
+        let offset = (tile_attr.vram_bank * VRAM_BANK_SIZE) as u16;
+        let lower = self.get_byte(offset + addr + row * 2 + 0);
+        let upper = self.get_byte(offset + addr + row * 2 + 1);
+
+        let value = bit!(upper, lower, 0x80 >> col);
+        self.pixel_types[i] = match value {
+            0 => PixelType::BgColor0,
+            _ => PixelType::BgColorOpaque,
+        };
+        let (r, g, b) = self.get_rgb_cgb(value, tile_attr.bgp_num, false);
+        self.update_screen_row(i, r, g, b);
     }
 
     fn set_bg_pixel(&mut self, addr: u16, row: u16, col: u8, i: usize) {
@@ -289,12 +313,13 @@ impl Gpu {
             0 => PixelType::BgColor0,
             _ => PixelType::BgColorOpaque,
         };
-        self.update_screen_row(i, value, self.bgp);
+        let (r, g, b) = self.get_rgb(value, self.bgp);
+        self.update_screen_row(i, r, g, b);
     }
 
     fn tiledata_addr(&self, sel: u8, idx: u8) -> u16 {
         if sel == 0 {
-            0x9000u16 + (idx as i8 as i16 * 16) as u16
+            0x9000u16.wrapping_add((idx as i8 as i16 * 16) as u16)
         } else {
             0x8000u16 + (idx as u16 * 16)
         }
@@ -337,8 +362,12 @@ impl Gpu {
             };
 
             let tile_addr = 0x8000u16 + tile_idx * 16 + row * 2;
-            let lower = self.get_byte(tile_addr + 0);
-            let upper = self.get_byte(tile_addr + 1);
+            let tile_addr = match self.emu_mode {
+                EmulationMode::Dmg => tile_addr as usize,
+                EmulationMode::Cgb => sprite.vram_bank * VRAM_BANK_SIZE + tile_addr as usize,
+            };
+            let lower = self.get_byte(tile_addr as u16 + 0);
+            let upper = self.get_byte(tile_addr as u16 + 1);
 
             for j in 0..8 {
                 let col = sprite.x + j;
@@ -353,15 +382,23 @@ impl Gpu {
                 let pixel_type = self.pixel_types[col as usize] != PixelType::BgColor0;
                 let below_bg = !sprite.has_priority && pixel_type;
                 if value != 0 && !below_bg {
-                    let palette = if sprite.obp1 { self.obp1 } else { self.obp0 };
-                    self.update_screen_row(col as usize, value, palette);
+                    match self.emu_mode {
+                        EmulationMode::Dmg => {
+                            let palette = if sprite.obp1 { self.obp1 } else { self.obp0 };
+                            let (r, g, b) = self.get_rgb(value, palette);
+                            self.update_screen_row(col as usize, r, g, b);
+                        }
+                        EmulationMode::Cgb => {
+                            let (r, g, b) = self.get_rgb_cgb(value, sprite.obp_num, true);
+                            self.update_screen_row(col as usize, r, g, b);
+                        }
+                    }
                 }
             }
         }
     }
 
-    fn update_screen_row(&mut self, x: usize, value: u8, palette: u8) {
-        let (r, g, b) = self.get_rgb(value, palette);
+    fn update_screen_row(&mut self, x: usize, r: u8, g: u8, b: u8) {
         let ly = self.ly as usize;
         self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 0] = r;
         self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 1] = g;
@@ -376,6 +413,19 @@ impl Gpu {
             2 => (52, 104, 86),
             _ => (8, 23, 33),
         }
+    }
+
+    fn get_rgb_cgb(&self, value: u8, p_num: usize, obp: bool) -> (u8, u8, u8) {
+        let i = (p_num * 8) * (2 * value as usize);
+        let palette = if obp {
+            (self.obp_ram[i + 0] as u16) << 8 | self.obp_ram[i + 1] as u16
+        } else {
+            (self.bgp_ram[i + 0] as u16) << 8 | self.bgp_ram[i + 1] as u16
+        };
+        let r = palette & 0x001F;
+        let g = (palette & 0x03E0) >> 4;
+        let b = (palette & 0x7C00) >> 9;
+        (r as u8, g as u8, b as u8)
     }
 
     pub fn tick(&mut self, cycles: usize) {
@@ -576,7 +626,7 @@ impl Gpu {
                 (self.obp_auto_incr as u8) << 7 | self.obp_idx
             }
             0xFF6B if self.emu_mode == EmulationMode::Cgb => self.obp_ram[self.obp_idx as usize],
-            _ => panic!("Unexpected addr in gpu.get_byte"),
+            _ => panic!("Unexpected addr in gpu.get_byte {:#X}", addr),
         }
     }
 

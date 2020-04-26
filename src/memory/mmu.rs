@@ -221,7 +221,7 @@ impl Mmu {
                 if self.bootrom.is_active && value == 1 {
                     self.bootrom.deactivate();
                 } else {
-                    // println!("Write to io ports {:#X}", addr);
+                    println!("Write to io ports {:#X}", addr);
                 }
             }
             0xFF51..=0xFF7F => match addr {

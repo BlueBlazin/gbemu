@@ -1381,17 +1381,17 @@ mod tests {
 
     #[test]
     fn test_blargg() {
-        let rom = fs::read("roms/Pokemon Red (UE) [S][!].gb").unwrap();
+        let rom = fs::read("roms/Tetris DX (World) (SGB Enhanced).gbc").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         let mut flag = true;
         loop {
             cpu.tick();
-            if flag {
-                cpu.keydown(7);
-            } else {
-                cpu.keyup(7);
-            }
+            // if flag {
+            //     cpu.keydown(7);
+            // } else {
+            //     cpu.keyup(7);
+            // }
             flag = !flag;
         }
     }
