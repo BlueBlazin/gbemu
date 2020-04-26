@@ -309,67 +309,6 @@ impl Gpu {
         }
     }
 
-    fn draw_line_bg2(&mut self) {
-        let window_y = if self.window_enable != 0 {
-            self.ly as i32 - self.window_y as i32
-        } else {
-            -1
-        };
-        let win_row = (window_y / 8) as usize;
-
-        let y = self.ly.wrapping_add(self.scroll_y);
-        let row = (y / 8) as usize;
-
-        for i in 0..SCREEN_WIDTH {
-            let window_x = self.window_x as i32 - 7 + i as i32;
-            let win_col = (window_x / 8) as usize;
-
-            let x = (i as u8).wrapping_add(self.scroll_x);
-            let col = (x / 8) as usize;
-
-            let tilenum = if window_y >= 0 && window_x >= 0 {
-                if self.win_tilemap_sel != 0 {
-                    0x9C00 + win_row * 32 + win_col
-                } else {
-                    0x9800 + win_row * 32 + win_col
-                }
-            } else {
-                if self.bg_tilemap_sel != 0 {
-                    0x9C00 + row * 32 + col
-                } else {
-                    0x9800 + row * 32 + col
-                }
-            };
-
-            let tile_offset = self.get_byte(tilenum as u16);
-            let tile_addr = if self.tiledata_sel != 0 {
-                0x8000u16 + tile_offset as u16 * 16
-            } else {
-                let n = tile_offset as i8 as i16 * 16;
-                0x9000u16.wrapping_add(n as u16)
-            };
-
-            let tile_row = (y % 8) as u16;
-            let lower = self.get_byte(tile_addr + tile_row * 2 + 0);
-            let upper = self.get_byte(tile_addr + tile_row * 2 + 1);
-            let mask = 0x80 >> (x % 8);
-            let value = (((upper & mask) != 0) as u8) << 1 | ((lower & mask) != 0) as u8;
-
-            self.pixel_types[i] = if value == 0 {
-                PixelType::BgColor0
-            } else {
-                PixelType::BgColorOpaque
-            };
-
-            let (r, g, b) = self.get_rgb(value, self.bgp);
-            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 0] = r;
-            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 1] = g;
-            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 2] = b;
-            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 3] =
-                255;
-        }
-    }
-
     fn draw_line_sprites(&mut self) {
         let ly = self.ly as i32;
         let height = if self.obj_size == 0 { 8i32 } else { 16i32 };
@@ -467,13 +406,13 @@ impl Gpu {
                 if self.clock >= 204 {
                     self.clock = self.clock - 204;
                     self.ly += 1;
+                    self.check_coincidence();
 
                     if self.ly > 143 {
                         self.change_mode(GpuMode::VBlank);
                         self.request_vblank_interrupt();
                     } else {
                         self.change_mode(GpuMode::OamSearch);
-                        self.check_coincidence();
                     }
                 }
             }
@@ -482,6 +421,7 @@ impl Gpu {
                 if self.clock >= 456 {
                     self.clock = self.clock - 456;
                     self.ly += 1;
+                    self.check_coincidence();
 
                     if self.ly > 153 {
                         self.ly = 0;
@@ -496,7 +436,7 @@ impl Gpu {
         if self.ly == self.lyc {
             self.coincident = 0x04;
             if self.lyc_int != 0 {
-                self.request_lcd_interrupt()
+                self.request_lcd_interrupt();
             }
         }
     }

@@ -1381,7 +1381,7 @@ mod tests {
 
     #[test]
     fn test_blargg() {
-        let rom = fs::read("roms/Tetris.gb").unwrap();
+        let rom = fs::read("roms/Pokemon Red (UE) [S][!].gb").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         let mut flag = true;

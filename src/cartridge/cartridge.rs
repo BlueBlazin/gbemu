@@ -10,8 +10,8 @@ impl Cartridge {
     pub fn new(data: Vec<u8>) -> Self {
         let mbc: Box<dyn Mbc> = match data[0x0147] {
             0x00 => Box::from(Mbc0::new(data)),
-            0x01..=0x02 => Box::from(Mbc1::new(data)),
-            _ => panic!("Unsupported MBC type"),
+            0x01..=0x03 => Box::from(Mbc1::new(data)),
+            n => panic!("Unsupported MBC type. Code {:#X}", n),
         };
 
         Self { mbc }
