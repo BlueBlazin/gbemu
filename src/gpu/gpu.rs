@@ -12,6 +12,12 @@ const SCREEN_DEPTH: usize = 4;
 const VRAM_OFFSET: u16 = 0x8000;
 const OAM_OFFSET: u16 = 0xFE00;
 
+macro_rules! bit {
+    ( $upper:expr , $lower:expr , $mask:expr ) => {
+        ((((($upper & $mask) != 0) as u8) << 1) | ((($lower & $mask) != 0) as u8))
+    };
+}
+
 #[derive(Debug, PartialEq)]
 pub enum GpuMode {
     OamSearch,
@@ -37,8 +43,8 @@ struct Sprite {
     pub x: i32,
     pub number: u16,
     pub has_priority: bool,
-    pub flip_vertical: bool,
-    pub flip_horizontal: bool,
+    pub mirror_vertical: bool,
+    pub mirror_horizontal: bool,
     pub obp1: bool,
     pub vram_bank: usize,
     pub obp_num: usize,
@@ -69,8 +75,8 @@ impl From<&[u8]> for Sprite {
             x: bytes[1] as u16 as i32 - 8,
             number: bytes[2] as u16,
             has_priority: (bytes[3] & 0x80) == 0,
-            flip_vertical: (bytes[3] & 0x40) != 0,
-            flip_horizontal: (bytes[3] & 0x20) != 0,
+            mirror_vertical: (bytes[3] & 0x40) != 0,
+            mirror_horizontal: (bytes[3] & 0x20) != 0,
             obp1: (bytes[3] & 0x10) != 0,
             vram_bank: ((bytes[3] & 0x08) >> 2) as usize,
             obp_num: (bytes[3] & 0x07) as usize,
@@ -203,23 +209,107 @@ impl Gpu {
     fn draw_line(&mut self) {
         for i in 0..SCREEN_WIDTH {
             self.pixel_types[i] = PixelType::BgColor0;
-            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 0] =
-                255;
-            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 1] =
-                255;
-            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 2] =
-                255;
-            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 3] =
-                255;
+            let ly = self.ly as usize;
+            self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 0] = 255;
+            self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 1] = 255;
+            self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 2] = 255;
+            self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 3] = 255;
         }
 
-        // draw bg and window
         self.draw_line_bg();
-        // draw sprites
         self.draw_line_sprites();
     }
 
     fn draw_line_bg(&mut self) {
+        for i in 0..SCREEN_WIDTH {
+            if self.is_win_enabled() && self.is_win_pixel(i) {
+                self.put_win_pixel(i);
+            } else {
+                self.put_bg_pixel(i);
+            }
+        }
+    }
+
+    #[inline]
+    fn is_win_enabled(&self) -> bool {
+        self.window_enable != 0 && self.window_x < 167 && self.window_y < 144
+    }
+
+    #[inline]
+    fn is_win_pixel(&self, i: usize) -> bool {
+        self.window_x.wrapping_sub(7) <= i as u8 && self.window_y <= self.ly
+    }
+
+    fn put_win_pixel(&mut self, i: usize) {
+        let (lx, ly) = (i as u8, self.ly);
+
+        // get idx of the coincident window tile
+        let base_addr = self.base_tilemap_addr(self.win_tilemap_sel);
+        let tilemap_offset = (ly as usize / 8) * 32 + i / 8;
+        let tilemap_addr = base_addr + tilemap_offset as u16;
+        let tile_idx = self.get_byte(tilemap_addr);
+
+        // get addr of tile
+        let addr = self.tiledata_addr(self.tiledata_sel, tile_idx);
+
+        // set pixel value
+        let row = (ly % 8) as u16;
+        let col = lx % 8;
+        self.set_bg_pixel(addr, row, col, i);
+    }
+
+    fn put_bg_pixel(&mut self, i: usize) {
+        // For normal background, the origin is transformed to (sx, sy).
+        // A consequence of this is that values can wrap around.
+        let (cx, ly) = (i as u8, self.ly);
+        let (sx, sy) = (self.scroll_x, self.scroll_y);
+
+        // get index of coincident bg tile
+        let base_addr = self.base_tilemap_addr(self.bg_tilemap_sel);
+        let tilemap_offset = (sy.wrapping_add(ly) as u16 / 8) * 32 + sx.wrapping_add(cx) as u16 / 8;
+        let tilemap_addr = base_addr + tilemap_offset;
+        let tile_idx = self.get_byte(tilemap_addr);
+
+        // get addr of tile
+        let addr = self.tiledata_addr(self.tiledata_sel, tile_idx);
+
+        // set pixel value
+        let row = (sy.wrapping_add(ly) % 8) as u16;
+        let col = sx.wrapping_add(cx) % 8;
+        self.set_bg_pixel(addr, row, col, i);
+    }
+
+    fn set_bg_pixel(&mut self, addr: u16, row: u16, col: u8, i: usize) {
+        let lower = self.get_byte(addr + row * 2 + 0);
+        let upper = self.get_byte(addr + row * 2 + 1);
+
+        // set screen[i] with appropriate color value
+        let value = bit!(upper, lower, 0x80 >> col);
+        self.pixel_types[i] = match value {
+            0 => PixelType::BgColor0,
+            _ => PixelType::BgColorOpaque,
+        };
+        self.update_screen_row(i, value, self.bgp);
+    }
+
+    fn tiledata_addr(&self, sel: u8, idx: u8) -> u16 {
+        if sel == 0 {
+            0x9000u16 + (idx as i8 as i16 * 16) as u16
+        } else {
+            0x8000u16 + (idx as u16 * 16)
+        }
+    }
+
+    #[inline]
+    fn base_tilemap_addr(&self, sel: u8) -> u16 {
+        if sel == 0 {
+            0x9800
+        } else {
+            0x9C00
+        }
+    }
+
+    fn draw_line_bg2(&mut self) {
         let window_y = if self.window_enable != 0 {
             self.ly as i32 - self.window_y as i32
         } else {
@@ -281,8 +371,8 @@ impl Gpu {
     }
 
     fn draw_line_sprites(&mut self) {
-        let height = if self.obj_size == 0 { 8i32 } else { 16i32 };
         let ly = self.ly as i32;
+        let height = if self.obj_size == 0 { 8i32 } else { 16i32 };
 
         let sprites: Vec<_> = (0..40)
             .map(|i| (Sprite::from(&self.oam[i * 4..(i + 1) * 4]), 40 - i))
@@ -291,145 +381,56 @@ impl Gpu {
             .into_sorted_vec()
             .into_iter()
             .take(10)
+            .filter(|(s, _)| (s.x >= -7) && (s.x < SCREEN_WIDTH as i32))
             .collect();
 
-        for (sprite, idx) in sprites.into_iter() {
-            let i = idx + 40;
-            if (sprite.x >= -7) && (sprite.x < SCREEN_WIDTH as i32) {
-                let row = if sprite.flip_vertical {
-                    (height - 1 - (ly - sprite.y)) as u16
+        for (sprite, _) in sprites.into_iter() {
+            let row = if sprite.mirror_vertical {
+                (height - 1 - (ly - sprite.y)) as u16
+            } else {
+                (ly - sprite.y) as u16
+            };
+
+            let tile_idx = if self.obj_size != 0 {
+                sprite.number & 0xFE
+            } else {
+                sprite.number
+            };
+
+            let tile_addr = 0x8000u16 + tile_idx * 16 + row * 2;
+            let lower = self.get_byte(tile_addr + 0);
+            let upper = self.get_byte(tile_addr + 1);
+
+            for j in 0..8 {
+                let col = sprite.x + j;
+                if (col < 0) || (col >= SCREEN_WIDTH as i32) {
+                    continue;
+                }
+                let value = if !sprite.mirror_horizontal {
+                    (upper & (0x80 >> j)).min(1) << 1 | (lower & (0x80 >> j)).min(1)
                 } else {
-                    (ly - sprite.y) as u16
+                    (upper & (0x01 << j)).min(1) << 1 | (lower & (0x01 << j)).min(1)
                 };
-
-                let tilenum = if self.obj_size != 0 {
-                    sprite.number & 0xFE
-                } else {
-                    sprite.number
-                };
-
-                let tile_addr = 0x8000u16 + tilenum * 16 + row * 2;
-                let lower = self.get_byte(tile_addr + 0);
-                let upper = self.get_byte(tile_addr + 1);
-
-                for j in 0..8 {
-                    if (sprite.x + j >= 0) && (sprite.x + j < (SCREEN_WIDTH as i32)) {
-                        let value = if sprite.flip_horizontal {
-                            let mask = 0x01 << j;
-                            (((upper & mask) != 0) as u8) << 1 | (((lower) & mask) != 0) as u8
-                        } else {
-                            let mask = 0x80 >> j;
-                            (((upper & mask) != 0) as u8) << 1 | ((lower & mask) != 0) as u8
-                        };
-
-                        let below_bg = !sprite.has_priority
-                            && (self.pixel_types[(sprite.x + j) as usize] != PixelType::BgColor0);
-
-                        if (value != 0) && !below_bg {
-                            let x = (sprite.x + j) as usize;
-                            let palette = if sprite.obp1 { self.obp1 } else { self.obp0 };
-                            let (r, g, b) = self.get_rgb(value, palette);
-                            self.screen[ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
-                                + x * SCREEN_DEPTH
-                                + 0] = r;
-                            self.screen[ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
-                                + x * SCREEN_DEPTH
-                                + 1] = g;
-                            self.screen[ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
-                                + x * SCREEN_DEPTH
-                                + 2] = b;
-                            self.screen[ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
-                                + i * SCREEN_DEPTH
-                                + 3] = 255;
-                        }
-                    }
+                let pixel_type = self.pixel_types[col as usize] != PixelType::BgColor0;
+                let below_bg = !sprite.has_priority && pixel_type;
+                if value != 0 && !below_bg {
+                    let palette = if sprite.obp1 { self.obp1 } else { self.obp0 };
+                    self.update_screen_row(col as usize, value, palette);
                 }
             }
         }
     }
 
-    fn draw_line_sprites2(&mut self) {
-        for i in (0..40).rev() {
-            let sprite = Sprite::from(&self.oam[i * 4..(i + 1) * 4]);
-            let height = if self.obj_size == 0 { 8i32 } else { 16i32 };
-            let ly = self.ly as i32;
-
-            if ((ly >= sprite.y) && (ly < sprite.y + height))
-                && ((sprite.x >= -7) && (sprite.x < SCREEN_WIDTH as i32))
-            {
-                let row = if sprite.flip_vertical {
-                    (height - 1 - (ly - sprite.y)) as u16
-                } else {
-                    (ly - sprite.y) as u16
-                };
-
-                let tilenum = if self.obj_size != 0 {
-                    sprite.number & 0xFE
-                } else {
-                    sprite.number
-                };
-
-                let tile_addr = 0x8000u16 + tilenum * 16 + row * 2;
-                let lower = self.get_byte(tile_addr + 0);
-                let upper = self.get_byte(tile_addr + 1);
-
-                for j in 0..8 {
-                    if (sprite.x + j >= 0) && (sprite.x + j < (SCREEN_WIDTH as i32)) {
-                        let value = if sprite.flip_horizontal {
-                            let mask = 0x01 << j;
-                            (((upper & mask) != 0) as u8) << 1 | (((lower) & mask) != 0) as u8
-                        } else {
-                            let mask = 0x80 >> j;
-                            (((upper & mask) != 0) as u8) << 1 | ((lower & mask) != 0) as u8
-                        };
-
-                        let below_bg = !sprite.has_priority
-                            && (self.pixel_types[(sprite.x + j) as usize] != PixelType::BgColor0);
-
-                        if (value != 0) && !below_bg {
-                            let x = (sprite.x + j) as usize;
-                            let palette = if sprite.obp1 { self.obp1 } else { self.obp0 };
-                            let (r, g, b) = self.get_rgb(value, palette);
-                            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
-                                + x * SCREEN_DEPTH
-                                + 0] = r;
-                            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
-                                + x * SCREEN_DEPTH
-                                + 1] = g;
-                            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
-                                + x * SCREEN_DEPTH
-                                + 2] = b;
-                            self.screen[self.ly as usize * SCREEN_WIDTH * SCREEN_DEPTH
-                                + i * SCREEN_DEPTH
-                                + 3] = 255;
-                        }
-                    }
-                }
-            }
-        }
+    fn update_screen_row(&mut self, x: usize, value: u8, palette: u8) {
+        let (r, g, b) = self.get_rgb(value, palette);
+        let ly = self.ly as usize;
+        self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 0] = r;
+        self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 1] = g;
+        self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 2] = b;
+        self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 3] = 255;
     }
 
     fn get_rgb(&self, value: u8, palette: u8) -> (u8, u8, u8) {
-        // match palette & (0x3 << (value * 2)) {
-        //     0 => (255, 255, 255),
-        //     1 => (192, 192, 192),
-        //     2 => (96, 96, 96),
-        //     _ => (0, 0, 0),
-        // }
-        // match palette & (0x3 << (value * 2)) {
-        //     0 => (155, 188, 15),
-        //     1 => (139, 172, 15),
-        //     2 => (48, 98, 48),
-        //     _ => (15, 56, 15),
-        // }
-        // match palette & (0b11 << (value * 2)) {
-        // match (palette >> (2 * value)) & 0x03 {
-        //     0 => (224, 247, 207),
-        //     1 => (134, 192, 108),
-        //     2 => (47, 104, 80),
-        //     _ => (7, 23, 33),
-        // }
-        // BGB Palette
         match (palette >> (2 * value)) & 0x03 {
             0 => (224, 247, 208),
             1 => (136, 192, 112),
@@ -558,10 +559,7 @@ impl Gpu {
             0xFF48 => self.obp0 = value,
             0xFF49 => self.obp1 = value,
             0xFF4A => self.window_y = value,
-            0xFF4B => {
-                // The value is window_x - 7.
-                self.window_x = value + 7;
-            }
+            0xFF4B => self.window_x = value,
             0xFF4F => self.vram_bank = (value & 0x01) as usize,
             0xFF68 if self.emu_mode == EmulationMode::Cgb => {
                 self.bgp_idx = value & 0x3F;

@@ -1387,6 +1387,11 @@ mod tests {
         let mut flag = true;
         loop {
             cpu.tick();
+            if flag {
+                cpu.keydown(7);
+            } else {
+                cpu.keyup(7);
+            }
             flag = !flag;
         }
     }
