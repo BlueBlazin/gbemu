@@ -167,6 +167,7 @@ impl Mmu {
                     _ => 0x00,
                 },
                 0xFF68..=0xFF6B => self.gpu.get_byte(addr),
+                0xFF70 => self.wram.get_byte(addr),
                 _ => {
                     println!("Read from io ports {:#X}", addr);
                     0xFF
@@ -237,6 +238,7 @@ impl Mmu {
                     self.transfer_length = ((value & 0x7F) as usize + 1) * 0x10;
                 }
                 0xFF68..=0xFF6B => self.gpu.set_byte(addr, value),
+                0xFF70 => self.wram.set_byte(addr, value),
                 _ => (),
             }, //println!("Write to io ports {:#X}", addr),
             // FF80-FFFE   High RAM (HRAM)

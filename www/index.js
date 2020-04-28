@@ -29,7 +29,6 @@ function drawScreen(screenPtr) {
     screenPtr,
     WIDTH * HEIGHT * CHANNELS
   );
-
   const image = new ImageData(screen, WIDTH, HEIGHT);
 
   ctx.putImageData(image, 0, 0, 0, 0, WIDTH, HEIGHT);

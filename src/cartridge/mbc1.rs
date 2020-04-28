@@ -32,7 +32,7 @@ impl Mbc1 {
         Mbc1 {
             rom: data,
             ram: vec![0; ram_size],
-            rom_bank: 0,
+            rom_bank: 1,
             ram_bank: 0,
             ram_enabled: false,
             mode: Mode::RomBanking,
@@ -45,7 +45,6 @@ impl Mbc for Mbc1 {
         match addr {
             0x0000..=0x3FFF => self.rom[addr as usize],
             0x4000..=0x7FFF => {
-                println!("rom bank: {}, addr: {:#X}", self.rom_bank, addr);
                 let addr = self.rom_bank as usize * ROM_BANK_SIZE + (addr as usize - ROM_OFFSET);
                 self.rom[addr]
             }

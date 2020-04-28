@@ -2,7 +2,6 @@ use crate::cpu::EmulationMode;
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 
-const VRAM_SIZE: usize = 0x4000;
 const VRAM_BANK_SIZE: usize = 0x2000;
 const OAM_SIZE: usize = 0xA0;
 const PALETTE_RAM_SIZE: usize = 0x40;
@@ -78,7 +77,7 @@ impl From<&[u8]> for Sprite {
             mirror_vertical: (bytes[3] & 0x40) != 0,
             mirror_horizontal: (bytes[3] & 0x20) != 0,
             obp1: (bytes[3] & 0x10) != 0,
-            vram_bank: ((bytes[3] & 0x08) >> 2) as usize,
+            vram_bank: ((bytes[3] & 0x08) >> 3) as usize,
             obp_num: (bytes[3] & 0x07) as usize,
         }
     }
@@ -96,7 +95,7 @@ impl From<u8> for BgAttr {
     fn from(value: u8) -> Self {
         Self {
             bgp_num: (value & 0x07) as usize,
-            vram_bank: ((value & 0x08) >> 3) as usize,
+            vram_bank: if (value & 0x08) == 0 { 0 } else { 1 },
             mirror_horizontal: (value & 0x20) != 0,
             mirror_vertical: (value & 0x40) != 0,
             has_priority: (value & 0x80) != 0,
@@ -112,8 +111,8 @@ enum PixelType {
 
 pub struct Gpu {
     pub screen: Vec<u8>,
-    pub vram: Vec<u8>,
-    pub vram2: Vec<u8>,
+    pub vram0: Vec<u8>,
+    pub vram1: Vec<u8>,
     pub bgp_ram: Vec<u8>,
     pub obp_ram: Vec<u8>,
     bgp_idx: u8,
@@ -162,8 +161,8 @@ impl Gpu {
 
         Gpu {
             screen: vec![0; SCREEN_HEIGHT * SCREEN_WIDTH * SCREEN_DEPTH],
-            vram: vec![0; VRAM_SIZE],
-            vram2: vec![0; VRAM_BANK_SIZE],
+            vram0: vec![0; VRAM_BANK_SIZE],
+            vram1: vec![0; VRAM_BANK_SIZE],
             bgp_ram: vec![0; PALETTE_RAM_SIZE],
             obp_ram: vec![0; PALETTE_RAM_SIZE],
             oam: vec![0; OAM_SIZE],
@@ -178,10 +177,10 @@ impl Gpu {
             window_x: 0,
             window_y: 0,
             lcd_enable: 0,
-            win_tilemap_sel: 0,
+            win_tilemap_sel: 1,
             window_enable: 0,
             tiledata_sel: 0,
-            bg_tilemap_sel: 0,
+            bg_tilemap_sel: 1,
             obj_size: 0,
             obj_enable: 0,
             bg_display: 0,
@@ -226,7 +225,7 @@ impl Gpu {
         for i in 0..SCREEN_WIDTH {
             if self.is_win_enabled() && self.is_win_pixel(i) {
                 self.put_win_pixel(i);
-            } else {
+            } else if self.bg_display != 0 {
                 self.put_bg_pixel(i);
             }
         }
@@ -234,20 +233,21 @@ impl Gpu {
 
     #[inline]
     fn is_win_enabled(&self) -> bool {
-        self.window_enable != 0 && self.window_x < 167 && self.window_y < 144
+        (self.window_enable != 0) && (self.window_x < 167) && (self.window_y < 144)
     }
 
     #[inline]
     fn is_win_pixel(&self, i: usize) -> bool {
-        self.window_x.wrapping_sub(7) <= i as u8 && self.window_y <= self.ly
+        self.window_x <= (i + 7) as u8 && self.window_y <= self.ly
     }
 
     fn put_win_pixel(&mut self, i: usize) {
         let (lx, ly) = (i as u8, self.ly);
+        let (wx, wy) = (self.window_x, self.window_y);
 
         // get idx of the coincident window tile
         let base_addr = self.base_tilemap_addr(self.win_tilemap_sel);
-        let tilemap_offset = (ly as usize / 8) * 32 + i / 8;
+        let tilemap_offset = ((ly - wy) as usize / 8) * 32 + (i + 7 - wx as usize) / 8;
         let tilemap_addr = base_addr + tilemap_offset as u16;
         let tile_idx = self.get_byte(tilemap_addr);
 
@@ -255,8 +255,8 @@ impl Gpu {
         let addr = self.tiledata_addr(self.tiledata_sel, tile_idx);
 
         // set pixel value
-        let row = (ly % 8) as u16;
-        let col = lx % 8;
+        let row = ((ly - wy) % 8) as u16;
+        let col = (lx + 7 - wx) % 8;
         match self.emu_mode {
             EmulationMode::Dmg => self.set_bg_pixel(addr, row, col, i),
             EmulationMode::Cgb => self.set_cgb_bg_pixel(addr, row, col, i, tilemap_addr),
@@ -273,7 +273,7 @@ impl Gpu {
         let base_addr = self.base_tilemap_addr(self.bg_tilemap_sel);
         let tilemap_offset = (sy.wrapping_add(ly) as u16 / 8) * 32 + sx.wrapping_add(cx) as u16 / 8;
         let tilemap_addr = base_addr + tilemap_offset;
-        let tile_idx = self.get_byte(tilemap_addr);
+        let tile_idx = self.get_vram_byte(tilemap_addr, 0);
 
         // get addr of tile
         let addr = self.tiledata_addr(self.tiledata_sel, tile_idx);
@@ -288,13 +288,26 @@ impl Gpu {
     }
 
     fn set_cgb_bg_pixel(&mut self, addr: u16, row: u16, col: u8, i: usize, tilemap_addr: u16) {
-        let tile_attr_addr = VRAM_BANK_SIZE as u16 + tilemap_addr;
-        let tile_attr = BgAttr::from(self.get_byte(tile_attr_addr));
-        let offset = (tile_attr.vram_bank * VRAM_BANK_SIZE) as u16;
-        let lower = self.get_byte(offset + addr + row * 2 + 0);
-        let upper = self.get_byte(offset + addr + row * 2 + 1);
+        let tile_attr = BgAttr::from(self.get_vram_byte(tilemap_addr, 1));
 
-        let value = bit!(upper, lower, 0x80 >> col);
+        let (lower, upper) = if tile_attr.mirror_vertical {
+            (
+                self.get_vram_byte(addr + (7 - row) * 2 + 0, tile_attr.vram_bank),
+                self.get_vram_byte(addr + (7 - row) * 2 + 1, tile_attr.vram_bank),
+            )
+        } else {
+            (
+                self.get_vram_byte(addr + row * 2 + 0, tile_attr.vram_bank),
+                self.get_vram_byte(addr + row * 2 + 1, tile_attr.vram_bank),
+            )
+        };
+
+        let value = if tile_attr.mirror_horizontal {
+            bit!(upper, lower, 0x80 >> (7 - col))
+        } else {
+            bit!(upper, lower, 0x80 >> col)
+        };
+
         self.pixel_types[i] = match value {
             0 => PixelType::BgColor0,
             _ => PixelType::BgColorOpaque,
@@ -355,19 +368,17 @@ impl Gpu {
                 (ly - sprite.y) as u16
             };
 
-            let tile_idx = if self.obj_size != 0 {
-                sprite.number & 0xFE
-            } else {
-                sprite.number
-            };
+            let tile_idx = sprite.number & if self.obj_size != 0 { 0x00FE } else { 0x00FF };
 
             let tile_addr = 0x8000u16 + tile_idx * 16 + row * 2;
-            let tile_addr = match self.emu_mode {
-                EmulationMode::Dmg => tile_addr as usize,
-                EmulationMode::Cgb => sprite.vram_bank * VRAM_BANK_SIZE + tile_addr as usize,
+
+            let (lower, upper) = match self.emu_mode {
+                EmulationMode::Dmg => (self.get_byte(tile_addr + 0), self.get_byte(tile_addr + 1)),
+                EmulationMode::Cgb => (
+                    self.get_vram_byte(tile_addr + 0, sprite.vram_bank),
+                    self.get_vram_byte(tile_addr + 1, sprite.vram_bank),
+                ),
             };
-            let lower = self.get_byte(tile_addr as u16 + 0);
-            let upper = self.get_byte(tile_addr as u16 + 1);
 
             for j in 0..8 {
                 let col = sprite.x + j;
@@ -415,17 +426,33 @@ impl Gpu {
         }
     }
 
-    fn get_rgb_cgb(&self, value: u8, p_num: usize, obp: bool) -> (u8, u8, u8) {
-        let i = (p_num * 8) * (2 * value as usize);
+    fn get_rgb_cgb(&self, color_num: u8, palette_num: usize, obp: bool) -> (u8, u8, u8) {
+        let palette_idx = palette_num * 8;
+        let color_idx = palette_idx + color_num as usize * 2;
+
         let palette = if obp {
-            (self.obp_ram[i + 0] as u16) << 8 | self.obp_ram[i + 1] as u16
+            (self.obp_ram[color_idx + 0] as u16) << 8 | self.obp_ram[color_idx + 1] as u16
         } else {
-            (self.bgp_ram[i + 0] as u16) << 8 | self.bgp_ram[i + 1] as u16
+            (self.bgp_ram[color_idx + 1] as u16) << 8 | self.bgp_ram[color_idx + 0] as u16
         };
-        let r = palette & 0x001F;
-        let g = (palette & 0x03E0) >> 4;
-        let b = (palette & 0x7C00) >> 9;
-        (r as u8, g as u8, b as u8)
+
+        self.color_correct(
+            (palette & 0x001F) >> 0,
+            (palette & 0x03E0) >> 5,
+            (palette & 0x7C00) >> 10,
+        )
+    }
+
+    fn color_correct(&self, r: u16, g: u16, b: u16) -> (u8, u8, u8) {
+        let r = r as u32;
+        let g = g as u32;
+        let b = b as u32;
+
+        (
+            ((r << 3) | (r >> 2)) as u8,
+            ((g << 3) | (g >> 2)) as u8,
+            ((b << 3) | (b >> 2)) as u8,
+        )
     }
 
     pub fn tick(&mut self, cycles: usize) {
@@ -510,10 +537,7 @@ impl Gpu {
         match addr {
             0x8000..=0x9FFF => match self.mode {
                 GpuMode::PixelTransfer if !self.gdma_active => (),
-                _ => {
-                    let addr = self.vram_bank * VRAM_BANK_SIZE + (addr - VRAM_OFFSET) as usize;
-                    self.vram[addr] = value;
-                }
+                _ => self.set_vram_byte(addr, value, self.vram_bank),
             },
             0xFE00..=0xFE9F => match self.mode {
                 GpuMode::OamSearch | GpuMode::PixelTransfer => (),
@@ -579,10 +603,7 @@ impl Gpu {
         match addr {
             0x8000..=0x9FFF => match self.mode {
                 GpuMode::PixelTransfer => 0x00,
-                _ => {
-                    let addr = self.vram_bank * VRAM_BANK_SIZE + (addr - VRAM_OFFSET) as usize;
-                    self.vram[addr]
-                }
+                _ => self.get_vram_byte(addr, self.vram_bank),
             },
             0xFE00..=0xFE9F => match self.mode {
                 GpuMode::OamSearch | GpuMode::PixelTransfer => 0x00,
@@ -627,6 +648,32 @@ impl Gpu {
             }
             0xFF6B if self.emu_mode == EmulationMode::Cgb => self.obp_ram[self.obp_idx as usize],
             _ => panic!("Unexpected addr in gpu.get_byte {:#X}", addr),
+        }
+    }
+
+    fn set_vram_byte(&mut self, addr: u16, value: u8, bank: usize) {
+        match addr {
+            0x8000..=0x9FFF => {
+                if bank == 0 {
+                    self.vram0[(addr - VRAM_OFFSET) as usize] = value;
+                } else {
+                    self.vram1[(addr - VRAM_OFFSET) as usize] = value;
+                }
+            }
+            _ => panic!("Unexpected addr in get_vram_byte"),
+        }
+    }
+
+    fn get_vram_byte(&self, addr: u16, bank: usize) -> u8 {
+        match addr {
+            0x8000..=0x9FFF => {
+                if bank == 0 {
+                    self.vram0[(addr - VRAM_OFFSET) as usize]
+                } else {
+                    self.vram1[(addr - VRAM_OFFSET) as usize]
+                }
+            }
+            _ => panic!("Unexpected addr in get_vram_byte"),
         }
     }
 

@@ -1381,7 +1381,7 @@ mod tests {
 
     #[test]
     fn test_blargg() {
-        let rom = fs::read("roms/Tetris DX (World) (SGB Enhanced).gbc").unwrap();
+        let rom = fs::read("roms/cgb-acid2.gbc").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         let mut flag = true;
