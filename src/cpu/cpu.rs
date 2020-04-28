@@ -96,14 +96,6 @@ impl Cpu {
     pub fn tick(&mut self) -> usize {
         self.cycles = 0;
 
-        // Fetch Decode Execute
-        // if !self.halted {
-        //     let opcode = self.fetch();
-        //     self.decode_exec(opcode);
-        // } else {
-        //     self.cycles += 4;
-        // }
-
         if self.halted {
             self.cycles += 4;
         } else {
@@ -113,9 +105,6 @@ impl Cpu {
                 _ => self.cpu_tick(),
             }
         }
-
-        // Service Interrupts
-        // self.service_interrupts();
 
         // Step Timers
         self.mmu.timer_tick(self.cycles);

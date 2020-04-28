@@ -62,7 +62,7 @@ impl Mmu {
     }
 
     pub fn in_hblank(&self) -> bool {
-        self.gpu.mode == GpuMode::HBlank
+        self.gpu.mode() == &GpuMode::HBlank
     }
 
     pub fn gdma_tick(&mut self) -> usize {

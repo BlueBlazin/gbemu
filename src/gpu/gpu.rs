@@ -109,6 +109,121 @@ enum PixelType {
     BgColorOpaque,
 }
 
+// Bit 7 - LCD Display Enable             (0=Off, 1=On)
+// Bit 6 - Window Tile Map Display Select (0=9800-9BFF, 1=9C00-9FFF)
+// Bit 5 - Window Display Enable          (0=Off, 1=On)
+// Bit 4 - BG & Window Tile Data Select   (0=8800-97FF, 1=8000-8FFF)
+// Bit 3 - BG Tile Map Display Select     (0=9800-9BFF, 1=9C00-9FFF)
+// Bit 2 - OBJ (Sprite) Size              (0=8x8, 1=8x16)
+// Bit 1 - OBJ (Sprite) Display Enable    (0=Off, 1=On)
+// Bit 0 - BG/Window Display/Priority     (0=Off, 1=On)
+#[derive(Default)]
+struct LcdControl {
+    pub display_enable: u8,
+    pub win_tilemap_sel: u8,
+    pub win_display_enable: u8,
+    pub bg_tiledata_sel: u8,
+    pub bg_tilemap_sel: u8,
+    pub obj_size: u8,
+    pub obj_display_enable: u8,
+    pub lcdc0: u8,
+}
+
+impl LcdControl {
+    pub fn display_enabled(&self) -> bool {
+        self.display_enable != 0
+    }
+
+    pub fn win_tilemap(&self) -> u16 {
+        if self.win_tilemap_sel == 0 {
+            0x9800
+        } else {
+            0x9C00
+        }
+    }
+
+    pub fn bg_tilemap(&self) -> u16 {
+        if self.bg_tilemap_sel == 0 {
+            0x9800
+        } else {
+            0x9C00
+        }
+    }
+
+    pub fn window_enabled(&self, mode: &EmulationMode) -> bool {
+        match mode {
+            EmulationMode::Dmg => self.lcdc0 != 0 && self.win_display_enable != 0,
+            EmulationMode::Cgb => self.win_display_enable != 0,
+        }
+    }
+
+    pub fn obj_enabled(&self) -> bool {
+        self.obj_display_enable != 0
+    }
+}
+
+impl From<&LcdControl> for u8 {
+    fn from(lcdc: &LcdControl) -> u8 {
+        0x0 | lcdc.display_enable
+            | lcdc.win_tilemap_sel
+            | lcdc.win_display_enable
+            | lcdc.bg_tiledata_sel
+            | lcdc.bg_tilemap_sel
+            | lcdc.obj_size
+            | lcdc.obj_display_enable
+            | lcdc.lcdc0
+    }
+}
+
+// Bit 6 - LYC=LY Coincidence Interrupt (1=Enable) (Read/Write)
+// Bit 5 - Mode 2 OAM Interrupt         (1=Enable) (Read/Write)
+// Bit 4 - Mode 1 V-Blank Interrupt     (1=Enable) (Read/Write)
+// Bit 3 - Mode 0 H-Blank Interrupt     (1=Enable) (Read/Write)
+// Bit 2 - Coincidence Flag  (0:LYC<>LY, 1:LYC=LY) (Read Only)
+// Bit 1-0 - Mode Flag       (Mode 0-3, see below) (Read Only)
+struct LcdStatus {
+    pub lyc_int: u8,
+    pub oam_int: u8,
+    pub vblank_int: u8,
+    pub hblank_int: u8,
+    pub coincident: u8,
+    pub mode: GpuMode,
+}
+
+impl Default for LcdStatus {
+    fn default() -> Self {
+        Self {
+            lyc_int: 0,
+            oam_int: 0,
+            vblank_int: 0,
+            hblank_int: 0,
+            coincident: 0,
+            mode: GpuMode::OamSearch,
+        }
+    }
+}
+
+impl From<&LcdStatus> for u8 {
+    fn from(stat: &LcdStatus) -> u8 {
+        0x0 | stat.lyc_int
+            | stat.oam_int
+            | stat.vblank_int
+            | stat.hblank_int
+            | stat.coincident
+            | u8::from(&stat.mode)
+    }
+}
+
+#[derive(Default)]
+struct LcdPosition {
+    pub scroll_y: u8,
+    pub scroll_x: u8,
+    pub ly: u8,
+    pub lyc: u8,
+    pub window_y: u8,
+    pub window_x: u8,
+}
+
 pub struct Gpu {
     pub screen: Vec<u8>,
     pub vram0: Vec<u8>,
@@ -122,29 +237,12 @@ pub struct Gpu {
     emu_mode: EmulationMode,
     oam: Vec<u8>,
     pixel_types: Vec<PixelType>,
-    scroll_x: u8,
-    scroll_y: u8,
-    window_x: u8,
-    window_y: u8,
-    lcd_enable: u8,
-    win_tilemap_sel: u8,
-    window_enable: u8,
-    tiledata_sel: u8,
-    bg_tilemap_sel: u8,
-    obj_size: u8,
-    obj_enable: u8,
-    bg_display: u8,
+    lcdc: LcdControl,
     bgp: u8,
     obp0: u8,
     obp1: u8,
-    pub mode: GpuMode,
-    ly: u8,
-    lyc: u8,
-    lyc_int: u8,
-    oam_int: u8,
-    vblank_int: u8,
-    hblank_int: u8,
-    coincident: u8,
+    position: LcdPosition,
+    stat: LcdStatus,
     clock: usize,
     pub request_vblank_int: bool,
     pub request_lcd_int: bool,
@@ -172,35 +270,22 @@ impl Gpu {
             obp_auto_incr: false,
             emu_mode,
             pixel_types,
-            scroll_x: 0,
-            scroll_y: 0,
-            window_x: 0,
-            window_y: 0,
-            lcd_enable: 0,
-            win_tilemap_sel: 1,
-            window_enable: 0,
-            tiledata_sel: 0,
-            bg_tilemap_sel: 1,
-            obj_size: 0,
-            obj_enable: 0,
-            bg_display: 0,
+            lcdc: LcdControl::default(),
             bgp: 0,
             obp0: 0,
             obp1: 0,
-            mode: GpuMode::OamSearch,
-            ly: 0,
-            lyc: 0,
-            lyc_int: 0,
-            oam_int: 0,
-            vblank_int: 0,
-            hblank_int: 0,
-            coincident: 0,
+            position: LcdPosition::default(),
+            stat: LcdStatus::default(),
             clock: 0,
             request_vblank_int: false,
             request_lcd_int: false,
             gdma_active: false,
             vram_bank: 0,
         }
+    }
+
+    pub fn mode(&self) -> &GpuMode {
+        &self.stat.mode
     }
 
     pub fn screen(&self) -> *const u8 {
@@ -210,7 +295,7 @@ impl Gpu {
     fn draw_line(&mut self) {
         for i in 0..SCREEN_WIDTH {
             self.pixel_types[i] = PixelType::BgColor0;
-            let ly = self.ly as usize;
+            let ly = self.position.ly as usize;
             self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 0] = 255;
             self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 1] = 255;
             self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 2] = 255;
@@ -225,7 +310,7 @@ impl Gpu {
         for i in 0..SCREEN_WIDTH {
             if self.is_win_enabled() && self.is_win_pixel(i) {
                 self.put_win_pixel(i);
-            } else if self.bg_display != 0 {
+            } else {
                 self.put_bg_pixel(i);
             }
         }
@@ -233,26 +318,28 @@ impl Gpu {
 
     #[inline]
     fn is_win_enabled(&self) -> bool {
-        (self.window_enable != 0) && (self.window_x < 167) && (self.window_y < 144)
+        self.lcdc.window_enabled(&self.emu_mode)
+            && (self.position.window_x < 167)
+            && (self.position.window_y < 144)
     }
 
     #[inline]
     fn is_win_pixel(&self, i: usize) -> bool {
-        self.window_x <= (i + 7) as u8 && self.window_y <= self.ly
+        self.position.window_x <= (i + 7) as u8 && self.position.window_y <= self.position.ly
     }
 
     fn put_win_pixel(&mut self, i: usize) {
-        let (lx, ly) = (i as u8, self.ly);
-        let (wx, wy) = (self.window_x, self.window_y);
+        let (lx, ly) = (i as u8, self.position.ly);
+        let (wx, wy) = (self.position.window_x, self.position.window_y);
 
         // get idx of the coincident window tile
-        let base_addr = self.base_tilemap_addr(self.win_tilemap_sel);
+        let base_addr = self.lcdc.win_tilemap();
         let tilemap_offset = ((ly - wy) as usize / 8) * 32 + (i + 7 - wx as usize) / 8;
         let tilemap_addr = base_addr + tilemap_offset as u16;
         let tile_idx = self.get_byte(tilemap_addr);
 
         // get addr of tile
-        let addr = self.tiledata_addr(self.tiledata_sel, tile_idx);
+        let addr = self.tiledata_addr(self.lcdc.bg_tiledata_sel, tile_idx);
 
         // set pixel value
         let row = ((ly - wy) % 8) as u16;
@@ -266,17 +353,17 @@ impl Gpu {
     fn put_bg_pixel(&mut self, i: usize) {
         // For normal background, the origin is transformed to (sx, sy).
         // A consequence of this is that values can wrap around.
-        let (cx, ly) = (i as u8, self.ly);
-        let (sx, sy) = (self.scroll_x, self.scroll_y);
+        let (cx, ly) = (i as u8, self.position.ly);
+        let (sx, sy) = (self.position.scroll_x, self.position.scroll_y);
 
         // get index of coincident bg tile
-        let base_addr = self.base_tilemap_addr(self.bg_tilemap_sel);
+        let base_addr = self.lcdc.bg_tilemap();
         let tilemap_offset = (sy.wrapping_add(ly) as u16 / 8) * 32 + sx.wrapping_add(cx) as u16 / 8;
         let tilemap_addr = base_addr + tilemap_offset;
         let tile_idx = self.get_vram_byte(tilemap_addr, 0);
 
         // get addr of tile
-        let addr = self.tiledata_addr(self.tiledata_sel, tile_idx);
+        let addr = self.tiledata_addr(self.lcdc.bg_tiledata_sel, tile_idx);
 
         // set pixel value
         let row = (sy.wrapping_add(ly) % 8) as u16;
@@ -338,18 +425,13 @@ impl Gpu {
         }
     }
 
-    #[inline]
-    fn base_tilemap_addr(&self, sel: u8) -> u16 {
-        if sel == 0 {
-            0x9800
-        } else {
-            0x9C00
-        }
-    }
-
     fn draw_line_sprites(&mut self) {
-        let ly = self.ly as i32;
-        let height = if self.obj_size == 0 { 8i32 } else { 16i32 };
+        if !self.lcdc.obj_enabled() {
+            return;
+        }
+
+        let ly = self.position.ly as i32;
+        let height = if self.lcdc.obj_size == 0 { 8i32 } else { 16i32 };
 
         let sprites: Vec<_> = (0..40)
             .map(|i| (Sprite::from(&self.oam[i * 4..(i + 1) * 4]), 40 - i))
@@ -368,7 +450,12 @@ impl Gpu {
                 (ly - sprite.y) as u16
             };
 
-            let tile_idx = sprite.number & if self.obj_size != 0 { 0x00FE } else { 0x00FF };
+            let tile_idx = sprite.number
+                & if self.lcdc.obj_size != 0 {
+                    0x00FE
+                } else {
+                    0x00FF
+                };
 
             let tile_addr = 0x8000u16 + tile_idx * 16 + row * 2;
 
@@ -410,7 +497,7 @@ impl Gpu {
     }
 
     fn update_screen_row(&mut self, x: usize, r: u8, g: u8, b: u8) {
-        let ly = self.ly as usize;
+        let ly = self.position.ly as usize;
         self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 0] = r;
         self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 1] = g;
         self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 2] = b;
@@ -456,13 +543,13 @@ impl Gpu {
     }
 
     pub fn tick(&mut self, cycles: usize) {
-        if self.lcd_enable == 0 {
+        if self.lcdc.display_enable == 0 {
             return;
         }
         // Increment clock by cycles elapsed in cpu.
         self.clock += cycles;
 
-        match self.mode {
+        match self.stat.mode {
             GpuMode::OamSearch => {
                 // 80 clocks
                 if self.clock >= 80 {
@@ -482,10 +569,10 @@ impl Gpu {
                 // 204 clocks
                 if self.clock >= 204 {
                     self.clock = self.clock - 204;
-                    self.ly += 1;
+                    self.position.ly += 1;
                     self.check_coincidence();
 
-                    if self.ly > 143 {
+                    if self.position.ly > 143 {
                         self.change_mode(GpuMode::VBlank);
                         self.request_vblank_interrupt();
                     } else {
@@ -497,11 +584,11 @@ impl Gpu {
                 // 4560 clocks, 10 lines
                 if self.clock >= 456 {
                     self.clock = self.clock - 456;
-                    self.ly += 1;
+                    self.position.ly += 1;
                     self.check_coincidence();
 
-                    if self.ly > 153 {
-                        self.ly = 0;
+                    if self.position.ly > 153 {
+                        self.position.ly = 0;
                         self.change_mode(GpuMode::OamSearch);
                     }
                 }
@@ -510,20 +597,20 @@ impl Gpu {
     }
 
     fn check_coincidence(&mut self) {
-        if self.ly == self.lyc {
-            self.coincident = 0x04;
-            if self.lyc_int != 0 {
+        if self.position.ly == self.position.lyc {
+            self.stat.coincident = 0x04;
+            if self.stat.lyc_int != 0 {
                 self.request_lcd_interrupt();
             }
         }
     }
 
     fn change_mode(&mut self, mode: GpuMode) {
-        self.mode = mode;
-        match self.mode {
-            GpuMode::OamSearch if self.oam_int != 0 => self.request_lcd_interrupt(),
-            GpuMode::HBlank if self.hblank_int != 0 => self.request_lcd_interrupt(),
-            GpuMode::VBlank if self.vblank_int != 0 => self.request_lcd_interrupt(),
+        self.stat.mode = mode;
+        match self.stat.mode {
+            GpuMode::OamSearch if self.stat.oam_int != 0 => self.request_lcd_interrupt(),
+            GpuMode::HBlank if self.stat.hblank_int != 0 => self.request_lcd_interrupt(),
+            GpuMode::VBlank if self.stat.vblank_int != 0 => self.request_lcd_interrupt(),
             _ => (),
         }
     }
@@ -535,45 +622,45 @@ impl Gpu {
 
     pub fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
-            0x8000..=0x9FFF => match self.mode {
-                GpuMode::PixelTransfer if !self.gdma_active => (),
+            0x8000..=0x9FFF => match self.stat.mode {
+                GpuMode::PixelTransfer if self.lcdc.display_enabled() && !self.gdma_active => (),
                 _ => self.set_vram_byte(addr, value, self.vram_bank),
             },
-            0xFE00..=0xFE9F => match self.mode {
-                GpuMode::OamSearch | GpuMode::PixelTransfer => (),
+            0xFE00..=0xFE9F => match self.stat.mode {
+                GpuMode::OamSearch | GpuMode::PixelTransfer if self.lcdc.display_enabled() => (),
                 _ => self.oam[(addr - OAM_OFFSET) as usize] = value,
             },
             0xFF40 => {
-                self.lcd_enable = value & 0x80;
-                if self.lcd_enable == 0 {
+                self.lcdc.display_enable = value & 0x80;
+                if self.lcdc.display_enable == 0 {
                     self.change_mode(GpuMode::HBlank);
                 }
-                self.win_tilemap_sel = value & 0x40;
-                self.window_enable = value & 0x20;
-                self.tiledata_sel = value & 0x10;
-                self.bg_tilemap_sel = value & 0x08;
-                self.obj_size = value & 0x04;
-                self.obj_enable = value & 0x02;
-                self.bg_display = value & 0x01;
+                self.lcdc.win_tilemap_sel = value & 0x40;
+                self.lcdc.win_display_enable = value & 0x20;
+                self.lcdc.bg_tiledata_sel = value & 0x10;
+                self.lcdc.bg_tilemap_sel = value & 0x08;
+                self.lcdc.obj_size = value & 0x04;
+                self.lcdc.obj_display_enable = value & 0x02;
+                self.lcdc.lcdc0 = value & 0x01;
             }
             0xFF41 => {
-                self.lyc_int = value & 0x40;
-                self.oam_int = value & 0x20;
-                self.vblank_int = value & 0x10;
-                self.hblank_int = value & 0x08;
+                self.stat.lyc_int = value & 0x40;
+                self.stat.oam_int = value & 0x20;
+                self.stat.vblank_int = value & 0x10;
+                self.stat.hblank_int = value & 0x08;
             }
-            0xFF42 => self.scroll_y = value,
-            0xFF43 => self.scroll_x = value,
+            0xFF42 => self.position.scroll_y = value,
+            0xFF43 => self.position.scroll_x = value,
             0xFF44 => {
                 // Writing to 0xFF44 resets ly.
-                self.ly = 0;
+                self.position.ly = 0;
             }
-            0xFF45 => self.lyc = value,
+            0xFF45 => self.position.lyc = value,
             0xFF47 => self.bgp = value,
             0xFF48 => self.obp0 = value,
             0xFF49 => self.obp1 = value,
-            0xFF4A => self.window_y = value,
-            0xFF4B => self.window_x = value,
+            0xFF4A => self.position.window_y = value,
+            0xFF4B => self.position.window_x = value,
             0xFF4F => self.vram_bank = (value & 0x01) as usize,
             0xFF68 if self.emu_mode == EmulationMode::Cgb => {
                 self.bgp_idx = value & 0x3F;
@@ -601,43 +688,27 @@ impl Gpu {
 
     pub fn get_byte(&self, addr: u16) -> u8 {
         match addr {
-            0x8000..=0x9FFF => match self.mode {
+            0x8000..=0x9FFF => match self.stat.mode {
                 GpuMode::PixelTransfer => 0x00,
                 _ => self.get_vram_byte(addr, self.vram_bank),
             },
-            0xFE00..=0xFE9F => match self.mode {
+            0xFE00..=0xFE9F => match self.stat.mode {
                 GpuMode::OamSearch | GpuMode::PixelTransfer => 0x00,
                 _ => self.oam[(addr - OAM_OFFSET) as usize],
             },
-            0xFF40 => {
-                0x0 | self.lcd_enable
-                    | self.win_tilemap_sel
-                    | self.window_enable
-                    | self.tiledata_sel
-                    | self.bg_tilemap_sel
-                    | self.obj_size
-                    | self.obj_enable
-                    | self.bg_display
-            }
-            0xFF41 => {
-                0x0 | self.lyc_int
-                    | self.oam_int
-                    | self.vblank_int
-                    | self.hblank_int
-                    | self.coincident
-                    | u8::from(&self.mode)
-            }
-            0xFF42 => self.scroll_y,
-            0xFF43 => self.scroll_x,
-            0xFF44 => self.ly,
-            0xFF45 => self.lyc,
+            0xFF40 => u8::from(&self.lcdc),
+            0xFF41 => u8::from(&self.stat),
+            0xFF42 => self.position.scroll_y,
+            0xFF43 => self.position.scroll_x,
+            0xFF44 => self.position.ly,
+            0xFF45 => self.position.lyc,
             // Write only register FF46
             0xFF46 => 0xFF,
             0xFF47 => self.bgp,
             0xFF48 => self.obp0,
             0xFF49 => self.obp1,
-            0xFF4A => self.window_y,
-            0xFF4B => self.window_x,
+            0xFF4A => self.position.window_y,
+            0xFF4B => self.position.window_x,
             0xFF4F => 0xFE | self.vram_bank as u8,
             0xFF68 if self.emu_mode == EmulationMode::Cgb => {
                 (self.bgp_auto_incr as u8) << 7 | self.bgp_idx
