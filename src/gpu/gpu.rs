@@ -250,6 +250,7 @@ pub struct Gpu {
     pub request_lcd_int: bool,
     pub gdma_active: bool,
     vram_bank: usize,
+    win_counter: usize,
 }
 
 impl Gpu {
@@ -278,6 +279,7 @@ impl Gpu {
             request_lcd_int: false,
             gdma_active: false,
             vram_bank: 0,
+            win_counter: 0,
         }
     }
 
@@ -303,6 +305,12 @@ impl Gpu {
         self.draw_line_sprites();
     }
 
+    fn clear_screen(&mut self) {
+        for i in 0..self.screen.len() {
+            self.screen[i] = 255;
+        }
+    }
+
     fn draw_line_bg(&mut self) {
         for i in 0..SCREEN_WIDTH {
             if (self.emu_mode == EmulationMode::Dmg) && (self.lcdc.lcdc0 == 0) {
@@ -316,9 +324,9 @@ impl Gpu {
                 }
             }
         }
+        self.update_window_counter();
     }
 
-    #[inline]
     fn is_win_enabled(&self) -> bool {
         self.lcdc.window_enabled(&self.emu_mode)
             && (self.position.window_x < 167)
@@ -330,22 +338,30 @@ impl Gpu {
         self.position.window_x <= (i + 7) as u8 && self.position.window_y <= self.position.ly
     }
 
+    #[inline]
+    fn update_window_counter(&mut self) {
+        if self.is_win_enabled() && self.position.window_y <= self.position.ly {
+            self.win_counter += 1;
+        }
+    }
+
     fn put_win_pixel(&mut self, i: usize) {
         let (lx, ly) = (i as u8, self.position.ly);
         let (wx, wy) = (self.position.window_x, self.position.window_y);
 
         // get idx of the coincident window tile
         let base_addr = self.lcdc.win_tilemap();
-        let tilemap_offset = ((ly - wy) as usize / 8) * 32 + (i + 7 - wx as usize) / 8;
+        let tilemap_offset = (self.win_counter / 8) * 32 + (i + 7 - wx as usize) / 8;
         let tilemap_addr = base_addr + tilemap_offset as u16;
-        let tile_idx = self.get_byte(tilemap_addr);
+        let tile_idx = self.get_vram_byte(tilemap_addr, 0);
 
         // get addr of tile
         let addr = self.tiledata_addr(self.lcdc.bg_tiledata_sel, tile_idx);
 
         // set pixel value
-        let row = ((ly - wy) % 8) as u16;
+        let row = (self.win_counter % 8) as u16;
         let col = (lx + 7 - wx) % 8;
+
         match self.emu_mode {
             EmulationMode::Dmg => self.set_bg_pixel(addr, row, col, i),
             EmulationMode::Cgb => self.set_cgb_bg_pixel(addr, row, col, i, tilemap_addr),
@@ -398,8 +414,8 @@ impl Gpu {
         };
 
         self.pixel_types[i] = match (tile_attr.has_priority, value) {
+            (_, 0) => PixelType::BgColor0,
             (true, _) => PixelType::BgPriorityOverride,
-            (false, 0) => PixelType::BgColor0,
             (false, _) => PixelType::BgColorOpaque,
         };
 
@@ -424,7 +440,7 @@ impl Gpu {
     fn tiledata_addr(&self, sel: u8, idx: u8) -> u16 {
         if sel == 0 {
             // 0x9000u16.wrapping_add((idx as i8 as i16 * 16) as u16)
-            0x8800u16 + (idx as i8 as i16 + 128) as u16
+            0x8800u16 + (idx as i8 as i16 + 128) as u16 * 16
         } else {
             0x8000u16 + (idx as u16 * 16)
         }
@@ -446,7 +462,7 @@ impl Gpu {
 
         sprites.sort_by_key(|(i, s)| match self.emu_mode {
             EmulationMode::Dmg => (s.x, *i),
-            EmulationMode::Cgb => (0, *i),
+            EmulationMode::Cgb => (*i as u32 as i32, 0),
         });
 
         for (_, sprite) in sprites.into_iter().rev() {
@@ -477,16 +493,25 @@ impl Gpu {
                 if (col < 0) || (col >= SCREEN_WIDTH as i32) {
                     continue;
                 }
-                let value = if !sprite.mirror_horizontal {
-                    (upper & (0x80 >> j)).min(1) << 1 | (lower & (0x80 >> j)).min(1)
+
+                let value = if sprite.mirror_horizontal {
+                    bit!(upper, lower, 0x80 >> (7 - j))
                 } else {
-                    (upper & (0x01 << j)).min(1) << 1 | (lower & (0x01 << j)).min(1)
+                    bit!(upper, lower, 0x80 >> j)
                 };
 
-                let pixel_type = &self.pixel_types[col as usize];
-                let below_bg = self.lcdc.lcdc0 != 0
-                    && (pixel_type == &PixelType::BgPriorityOverride
-                        || (!sprite.has_priority && pixel_type == &PixelType::BgColorOpaque));
+                // let pixel_type = &self.pixel_types[col as usize];
+                // let below_bg = (self.lcdc.lcdc0 != 0)
+                //     && (pixel_type == &PixelType::BgPriorityOverride
+                //         || (!sprite.has_priority && pixel_type == &PixelType::BgColorOpaque));
+
+                let below_bg = match &self.pixel_types[col as usize] {
+                    _ if self.lcdc.lcdc0 == 0 => false,
+                    PixelType::BgColor0 => false,
+                    PixelType::BgColorOpaque if !sprite.has_priority => true,
+                    PixelType::BgPriorityOverride => true,
+                    _ => false,
+                };
 
                 if value != 0 && !below_bg {
                     match self.emu_mode {
@@ -531,7 +556,7 @@ impl Gpu {
         let color_idx = palette_idx + color_num as usize * 2;
 
         let palette = if obp {
-            (self.obp_ram[color_idx + 0] as u16) << 8 | self.obp_ram[color_idx + 1] as u16
+            (self.obp_ram[color_idx + 1] as u16) << 8 | self.obp_ram[color_idx + 0] as u16
         } else {
             (self.bgp_ram[color_idx + 1] as u16) << 8 | self.bgp_ram[color_idx + 0] as u16
         };
@@ -566,8 +591,8 @@ impl Gpu {
             GpuMode::OamSearch => {
                 // 80 clocks
                 if self.clock >= 80 {
-                    self.change_mode(GpuMode::PixelTransfer);
                     self.clock = self.clock - 80;
+                    self.change_mode(GpuMode::PixelTransfer);
                 }
             }
             GpuMode::PixelTransfer => {
@@ -576,6 +601,12 @@ impl Gpu {
                     self.change_mode(GpuMode::HBlank);
                     self.clock = self.clock - 172;
                     self.draw_line();
+                    // if self.lcdc.window_enabled(&EmulationMode::Cgb)
+                    //     && (self.position.window_x < 167)
+                    //     && (self.position.window_y < 144)
+                    // {
+                    //     self.win_counter += 1;
+                    // }
                 }
             }
             GpuMode::HBlank => {
@@ -602,6 +633,7 @@ impl Gpu {
 
                     if self.position.ly > 153 {
                         self.position.ly = 0;
+                        self.win_counter = 0;
                         self.change_mode(GpuMode::OamSearch);
                     }
                 }
@@ -644,9 +676,14 @@ impl Gpu {
                 _ => self.oam[(addr - OAM_OFFSET) as usize] = value,
             },
             0xFF40 => {
+                let old_display_enable = self.lcdc.display_enable;
                 self.lcdc.display_enable = value & 0x80;
-                if self.lcdc.display_enable == 0 {
+                if old_display_enable != 0 && self.lcdc.display_enable == 0 {
                     self.change_mode(GpuMode::HBlank);
+                    self.position.ly = 0;
+                    self.win_counter = 0;
+                    self.clock = 0;
+                    self.clear_screen();
                 }
                 self.lcdc.win_tilemap_sel = value & 0x40;
                 self.lcdc.win_display_enable = value & 0x20;
@@ -664,11 +701,7 @@ impl Gpu {
             }
             0xFF42 => self.position.scroll_y = value,
             0xFF43 => self.position.scroll_x = value,
-            0xFF44 => {
-                // Writing to 0xFF44 resets ly.
-                // self.position.ly = 0;
-                ()
-            }
+            0xFF44 => (),
             0xFF45 => self.position.lyc = value,
             0xFF47 => self.dmgp.bgp = value,
             0xFF48 => self.dmgp.obp0 = value,
@@ -691,7 +724,7 @@ impl Gpu {
                 self.cgbp.obp_auto_incr = (value & 0x80) != 0;
             }
             0xFF6B if self.emu_mode == EmulationMode::Cgb => {
-                self.obp_ram[self.cgbp.bgp_idx as usize] = value;
+                self.obp_ram[self.cgbp.obp_idx as usize] = value;
                 if self.cgbp.obp_auto_incr {
                     self.cgbp.obp_idx = (self.cgbp.obp_idx + 1) % 0x40;
                 }
