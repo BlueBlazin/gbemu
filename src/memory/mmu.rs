@@ -16,7 +16,7 @@ const ECHO_OFFSET: u16 = 0xE000;
 pub enum DmaType {
     NoDma,
     HBlankDma,
-    GpDma,
+    GPDma,
 }
 
 /// Memory Management Unit (MMU)
@@ -45,7 +45,7 @@ impl Mmu {
         Mmu {
             bootrom: Bootrom::new(),
             cartridge: Cartridge::new(data),
-            gpu: Gpu::new(EmulationMode::Cgb),
+            gpu: Gpu::new(EmulationMode::Dmg),
             joypad: Joypad::new(),
             apu: Apu::new(),
             ie: 0,
@@ -147,6 +147,12 @@ impl Mmu {
                 0xFF01 => self.serial_out,
                 0xFF04..=0xFF07 => self.timer.get_byte(addr),
                 0xFF0F => {
+                    // println!(
+                    //     "{:#X} {:#X} {:#X}",
+                    //     self.timer.request_timer_int as u8,
+                    //     self.gpu.request_lcd_int as u8,
+                    //     self.gpu.request_vblank_int as u8
+                    // );
                     0x0 | (self.timer.request_timer_int as u8) << 2
                         | (self.gpu.request_lcd_int as u8) << 1
                         | (self.gpu.request_vblank_int as u8)
@@ -163,7 +169,7 @@ impl Mmu {
             0xFF4C..=0xFF7F => match addr {
                 0xFF4F => self.gpu.get_byte(addr),
                 0xFF55 => match self.dma {
-                    DmaType::GpDma | DmaType::HBlankDma => 0x01,
+                    DmaType::GPDma | DmaType::HBlankDma => 0x01,
                     _ => 0x00,
                 },
                 0xFF68..=0xFF6B => self.gpu.get_byte(addr),
@@ -232,7 +238,7 @@ impl Mmu {
                 0xFF54 => self.dma_dst = (self.dma_dst & 0xFF00) | value as u16,
                 0xFF55 => {
                     self.dma = match value & 0x80 {
-                        0x00 => DmaType::GpDma,
+                        0x00 => DmaType::GPDma,
                         _ => DmaType::HBlankDma,
                     };
                     self.transfer_length = ((value & 0x7F) as usize + 1) * 0x10;

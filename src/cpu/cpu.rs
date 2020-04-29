@@ -98,11 +98,15 @@ impl Cpu {
 
         if self.halted {
             self.cycles += 4;
+            self.service_interrupts();
         } else {
             match self.mmu.dma {
-                DmaType::GpDma => self.gdma_tick(),
+                DmaType::GPDma => self.gdma_tick(),
                 DmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
-                _ => self.cpu_tick(),
+                _ => {
+                    self.cpu_tick();
+                    self.service_interrupts();
+                }
             }
         }
 
@@ -121,8 +125,6 @@ impl Cpu {
     fn cpu_tick(&mut self) {
         let opcode = self.fetch();
         self.decode_exec(opcode);
-        // Service Interrupts
-        self.service_interrupts();
     }
 
     fn gdma_tick(&mut self) {
@@ -137,6 +139,7 @@ impl Cpu {
         let ie = self.mmu.get_byte(0xFFFF);
         let irr = self.mmu.get_byte(0xFF0F);
         let ints = ie & irr;
+
         if ints != 0 {
             self.halted = false;
 
@@ -144,19 +147,19 @@ impl Cpu {
                 // 0 - V-Blank Interupt
                 if (ints & 0x01) != 0 {
                     self.di();
-                    self.mmu.set_byte(0xFF0F, irr & !0x01);
+                    self.mmu.set_byte(0xFF0F, irr & 0xFE);
                     self.rst(0x40);
                 }
                 // 1 - LCD Interupt
                 else if (ints & 0x2) != 0 {
                     self.di();
-                    self.mmu.set_byte(0xFF0F, irr & !0x02);
+                    self.mmu.set_byte(0xFF0F, irr & 0xFD);
                     self.rst(0x48);
                 }
                 // 2 - Timer Interrupt
                 else if (ints & 0x4) != 0 {
                     self.di();
-                    self.mmu.set_byte(0xFF0F, irr & !0x04);
+                    self.mmu.set_byte(0xFF0F, irr & 0xFB);
                     self.rst(0x50);
                 }
                 // 3 - Serial Interrupt
@@ -1370,11 +1373,17 @@ mod tests {
 
     #[test]
     fn test_blargg() {
-        let rom = fs::read("roms/cgb-acid2.gbc").unwrap();
+        let rom = fs::read("roms/dmg-acid2.gb").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         let mut flag = true;
         loop {
+            // println!(
+            //     "{:#X} {:#X} halted: {}",
+            //     cpu.pc,
+            //     cpu.mmu.get_byte(cpu.pc),
+            //     cpu.halted
+            // );
             cpu.tick();
             // if flag {
             //     cpu.keydown(7);

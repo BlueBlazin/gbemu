@@ -90,7 +90,7 @@ impl Apu {
             self.channel2.tick(1);
             self.channel3.tick(1);
 
-            if (self.sample_clocks >= SAMPLE_RATE) {
+            if self.sample_clocks >= SAMPLE_RATE {
                 self.sample_clocks = self.sample_clocks - SAMPLE_RATE;
                 // if self.master_on {
                 //     self.channel1_samples[self.i] = self.channel1.dac() * self.master_vol_left;

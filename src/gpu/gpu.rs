@@ -36,7 +36,6 @@ impl From<&GpuMode> for u8 {
     }
 }
 
-#[derive(Eq)]
 struct Sprite {
     pub y: i32,
     pub x: i32,
@@ -47,24 +46,6 @@ struct Sprite {
     pub obp1: bool,
     pub vram_bank: usize,
     pub obp_num: usize,
-}
-
-impl Ord for Sprite {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.x.cmp(&other.x)
-    }
-}
-
-impl PartialOrd for Sprite {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for Sprite {
-    fn eq(&self, other: &Self) -> bool {
-        self.x == other.x
-    }
 }
 
 impl From<&[u8]> for Sprite {
@@ -107,6 +88,7 @@ impl From<u8> for BgAttr {
 enum PixelType {
     BgColor0,
     BgColorOpaque,
+    BgPriorityOverride,
 }
 
 // Bit 7 - LCD Display Enable             (0=Off, 1=On)
@@ -224,23 +206,43 @@ struct LcdPosition {
     pub window_x: u8,
 }
 
+#[derive(Default)]
+struct MonochromePalette {
+    pub bgp: u8,
+    pub obp0: u8,
+    pub obp1: u8,
+}
+
+#[derive(Default)]
+struct ColorPalette {
+    pub bgp_idx: u8,
+    pub bgp_auto_incr: bool,
+    pub obp_idx: u8,
+    pub obp_auto_incr: bool,
+}
+
+impl ColorPalette {
+    pub fn bgp(&self) -> u8 {
+        (self.bgp_auto_incr as u8) << 7 | (self.bgp_idx & 0x3F)
+    }
+
+    pub fn obp(&self) -> u8 {
+        (self.obp_auto_incr as u8) << 7 | (self.obp_idx & 0x3F)
+    }
+}
+
 pub struct Gpu {
     pub screen: Vec<u8>,
     pub vram0: Vec<u8>,
     pub vram1: Vec<u8>,
     pub bgp_ram: Vec<u8>,
     pub obp_ram: Vec<u8>,
-    bgp_idx: u8,
-    bgp_auto_incr: bool,
-    obp_idx: u8,
-    obp_auto_incr: bool,
+    cgbp: ColorPalette,
     emu_mode: EmulationMode,
     oam: Vec<u8>,
     pixel_types: Vec<PixelType>,
     lcdc: LcdControl,
-    bgp: u8,
-    obp0: u8,
-    obp1: u8,
+    dmgp: MonochromePalette,
     position: LcdPosition,
     stat: LcdStatus,
     clock: usize,
@@ -264,16 +266,11 @@ impl Gpu {
             bgp_ram: vec![0; PALETTE_RAM_SIZE],
             obp_ram: vec![0; PALETTE_RAM_SIZE],
             oam: vec![0; OAM_SIZE],
-            bgp_idx: 0,
-            bgp_auto_incr: false,
-            obp_idx: 0,
-            obp_auto_incr: false,
+            cgbp: ColorPalette::default(),
             emu_mode,
             pixel_types,
             lcdc: LcdControl::default(),
-            bgp: 0,
-            obp0: 0,
-            obp1: 0,
+            dmgp: MonochromePalette::default(),
             position: LcdPosition::default(),
             stat: LcdStatus::default(),
             clock: 0,
@@ -308,10 +305,15 @@ impl Gpu {
 
     fn draw_line_bg(&mut self) {
         for i in 0..SCREEN_WIDTH {
-            if self.is_win_enabled() && self.is_win_pixel(i) {
-                self.put_win_pixel(i);
+            if (self.emu_mode == EmulationMode::Dmg) && (self.lcdc.lcdc0 == 0) {
+                let (r, g, b) = self.get_rgb(0, self.dmgp.bgp);
+                self.update_screen_row(i, r, g, b);
             } else {
-                self.put_bg_pixel(i);
+                if self.is_win_enabled() && self.is_win_pixel(i) {
+                    self.put_win_pixel(i);
+                } else {
+                    self.put_bg_pixel(i);
+                }
             }
         }
     }
@@ -395,10 +397,12 @@ impl Gpu {
             bit!(upper, lower, 0x80 >> col)
         };
 
-        self.pixel_types[i] = match value {
-            0 => PixelType::BgColor0,
-            _ => PixelType::BgColorOpaque,
+        self.pixel_types[i] = match (tile_attr.has_priority, value) {
+            (true, _) => PixelType::BgPriorityOverride,
+            (false, 0) => PixelType::BgColor0,
+            (false, _) => PixelType::BgColorOpaque,
         };
+
         let (r, g, b) = self.get_rgb_cgb(value, tile_attr.bgp_num, false);
         self.update_screen_row(i, r, g, b);
     }
@@ -413,13 +417,14 @@ impl Gpu {
             0 => PixelType::BgColor0,
             _ => PixelType::BgColorOpaque,
         };
-        let (r, g, b) = self.get_rgb(value, self.bgp);
+        let (r, g, b) = self.get_rgb(value, self.dmgp.bgp);
         self.update_screen_row(i, r, g, b);
     }
 
     fn tiledata_addr(&self, sel: u8, idx: u8) -> u16 {
         if sel == 0 {
-            0x9000u16.wrapping_add((idx as i8 as i16 * 16) as u16)
+            // 0x9000u16.wrapping_add((idx as i8 as i16 * 16) as u16)
+            0x8800u16 + (idx as i8 as i16 + 128) as u16
         } else {
             0x8000u16 + (idx as u16 * 16)
         }
@@ -433,29 +438,29 @@ impl Gpu {
         let ly = self.position.ly as i32;
         let height = if self.lcdc.obj_size == 0 { 8i32 } else { 16i32 };
 
-        let sprites: Vec<_> = (0..40)
-            .map(|i| (Sprite::from(&self.oam[i * 4..(i + 1) * 4]), 40 - i))
-            .filter(|(s, _)| (ly >= s.y) && (ly < s.y + height))
-            .collect::<BinaryHeap<_>>()
-            .into_sorted_vec()
-            .into_iter()
+        let mut sprites: Vec<_> = (0..40)
+            .map(|i| (i, Sprite::from(&self.oam[i * 4..(i + 1) * 4])))
+            .filter(|(_, s)| (ly >= s.y) && (ly < s.y + height))
             .take(10)
-            .filter(|(s, _)| (s.x >= -7) && (s.x < SCREEN_WIDTH as i32))
             .collect();
 
-        for (sprite, _) in sprites.into_iter() {
+        sprites.sort_by_key(|(i, s)| match self.emu_mode {
+            EmulationMode::Dmg => (s.x, *i),
+            EmulationMode::Cgb => (0, *i),
+        });
+
+        for (_, sprite) in sprites.into_iter().rev() {
             let row = if sprite.mirror_vertical {
                 (height - 1 - (ly - sprite.y)) as u16
             } else {
                 (ly - sprite.y) as u16
             };
 
-            let tile_idx = sprite.number
-                & if self.lcdc.obj_size != 0 {
-                    0x00FE
-                } else {
-                    0x00FF
-                };
+            let tile_idx = if self.lcdc.obj_size != 0 {
+                sprite.number & 0x00FE
+            } else {
+                sprite.number & 0x00FF
+            };
 
             let tile_addr = 0x8000u16 + tile_idx * 16 + row * 2;
 
@@ -477,12 +482,20 @@ impl Gpu {
                 } else {
                     (upper & (0x01 << j)).min(1) << 1 | (lower & (0x01 << j)).min(1)
                 };
-                let pixel_type = self.pixel_types[col as usize] != PixelType::BgColor0;
-                let below_bg = !sprite.has_priority && pixel_type;
+
+                let pixel_type = &self.pixel_types[col as usize];
+                let below_bg = self.lcdc.lcdc0 != 0
+                    && (pixel_type == &PixelType::BgPriorityOverride
+                        || (!sprite.has_priority && pixel_type == &PixelType::BgColorOpaque));
+
                 if value != 0 && !below_bg {
                     match self.emu_mode {
                         EmulationMode::Dmg => {
-                            let palette = if sprite.obp1 { self.obp1 } else { self.obp0 };
+                            let palette = if sprite.obp1 {
+                                self.dmgp.obp1
+                            } else {
+                                self.dmgp.obp0
+                            };
                             let (r, g, b) = self.get_rgb(value, palette);
                             self.update_screen_row(col as usize, r, g, b);
                         }
@@ -653,33 +666,34 @@ impl Gpu {
             0xFF43 => self.position.scroll_x = value,
             0xFF44 => {
                 // Writing to 0xFF44 resets ly.
-                self.position.ly = 0;
+                // self.position.ly = 0;
+                ()
             }
             0xFF45 => self.position.lyc = value,
-            0xFF47 => self.bgp = value,
-            0xFF48 => self.obp0 = value,
-            0xFF49 => self.obp1 = value,
+            0xFF47 => self.dmgp.bgp = value,
+            0xFF48 => self.dmgp.obp0 = value,
+            0xFF49 => self.dmgp.obp1 = value,
             0xFF4A => self.position.window_y = value,
             0xFF4B => self.position.window_x = value,
             0xFF4F => self.vram_bank = (value & 0x01) as usize,
             0xFF68 if self.emu_mode == EmulationMode::Cgb => {
-                self.bgp_idx = value & 0x3F;
-                self.bgp_auto_incr = (value & 0x80) != 0;
+                self.cgbp.bgp_idx = value & 0x3F;
+                self.cgbp.bgp_auto_incr = (value & 0x80) != 0;
             }
             0xFF69 if self.emu_mode == EmulationMode::Cgb => {
-                self.bgp_ram[self.bgp_idx as usize] = value;
-                if self.bgp_auto_incr {
-                    self.bgp_idx = (self.bgp_idx + 1) % 0x40;
+                self.bgp_ram[self.cgbp.bgp_idx as usize] = value;
+                if self.cgbp.bgp_auto_incr {
+                    self.cgbp.bgp_idx = (self.cgbp.bgp_idx + 1) % 0x40;
                 }
             }
             0xFF6A if self.emu_mode == EmulationMode::Cgb => {
-                self.obp_idx = value & 0x3F;
-                self.obp_auto_incr = (value & 0x80) != 0;
+                self.cgbp.obp_idx = value & 0x3F;
+                self.cgbp.obp_auto_incr = (value & 0x80) != 0;
             }
             0xFF6B if self.emu_mode == EmulationMode::Cgb => {
-                self.obp_ram[self.bgp_idx as usize] = value;
-                if self.obp_auto_incr {
-                    self.obp_idx = (self.obp_idx + 1) % 0x40;
+                self.obp_ram[self.cgbp.bgp_idx as usize] = value;
+                if self.cgbp.obp_auto_incr {
+                    self.cgbp.obp_idx = (self.cgbp.obp_idx + 1) % 0x40;
                 }
             }
             _ => panic!("Unexpected addr in gpu.set_byte"),
@@ -704,20 +718,20 @@ impl Gpu {
             0xFF45 => self.position.lyc,
             // Write only register FF46
             0xFF46 => 0xFF,
-            0xFF47 => self.bgp,
-            0xFF48 => self.obp0,
-            0xFF49 => self.obp1,
+            0xFF47 => self.dmgp.bgp,
+            0xFF48 => self.dmgp.obp0,
+            0xFF49 => self.dmgp.obp1,
             0xFF4A => self.position.window_y,
             0xFF4B => self.position.window_x,
             0xFF4F => 0xFE | self.vram_bank as u8,
-            0xFF68 if self.emu_mode == EmulationMode::Cgb => {
-                (self.bgp_auto_incr as u8) << 7 | self.bgp_idx
+            0xFF68 if self.emu_mode == EmulationMode::Cgb => self.cgbp.bgp(),
+            0xFF69 if self.emu_mode == EmulationMode::Cgb => {
+                self.bgp_ram[self.cgbp.bgp_idx as usize]
             }
-            0xFF69 if self.emu_mode == EmulationMode::Cgb => self.bgp_ram[self.bgp_idx as usize],
-            0xFF6A if self.emu_mode == EmulationMode::Cgb => {
-                (self.obp_auto_incr as u8) << 7 | self.obp_idx
+            0xFF6A if self.emu_mode == EmulationMode::Cgb => self.cgbp.obp(),
+            0xFF6B if self.emu_mode == EmulationMode::Cgb => {
+                self.obp_ram[self.cgbp.obp_idx as usize]
             }
-            0xFF6B if self.emu_mode == EmulationMode::Cgb => self.obp_ram[self.obp_idx as usize],
             _ => panic!("Unexpected addr in gpu.get_byte {:#X}", addr),
         }
     }
