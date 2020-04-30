@@ -36,7 +36,7 @@ impl Wram {
             }
             0xFF70 => {
                 self.bank = match value {
-                    0x00..=0x07 => (value & 0x03) as usize,
+                    0x01..=0x07 => (value & 0x07) as usize,
                     _ => 0x01,
                 };
             }

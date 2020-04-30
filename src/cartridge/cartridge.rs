@@ -1,5 +1,7 @@
 use crate::cartridge::mbc0::Mbc0;
 use crate::cartridge::mbc1::Mbc1;
+use crate::cartridge::mbc3::Mbc3;
+use crate::cartridge::mbc5::Mbc5;
 use crate::cartridge::Mbc;
 
 pub struct Cartridge {
@@ -11,6 +13,8 @@ impl Cartridge {
         let mbc: Box<dyn Mbc> = match data[0x0147] {
             0x00 => Box::from(Mbc0::new(data)),
             0x01..=0x03 => Box::from(Mbc1::new(data)),
+            0x0F..=0x13 => Box::from(Mbc3::new(data)),
+            0x19..=0x1E => Box::from(Mbc5::new(data)),
             n => panic!("Unsupported MBC type. Code {:#X}", n),
         };
 

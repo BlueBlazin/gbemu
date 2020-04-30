@@ -45,7 +45,7 @@ impl Mmu {
         Mmu {
             bootrom: Bootrom::new(),
             cartridge: Cartridge::new(data),
-            gpu: Gpu::new(EmulationMode::Dmg),
+            gpu: Gpu::new(EmulationMode::Cgb),
             joypad: Joypad::new(),
             apu: Apu::new(),
             ie: 0,

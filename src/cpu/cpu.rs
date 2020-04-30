@@ -175,7 +175,8 @@ impl Cpu {
 
     #[allow(dead_code)]
     pub fn simulate_bootrom(&mut self) {
-        self.set_r16(R16::AF, 0x01B0);
+        // self.set_r16(R16::AF, 0x01B0);
+        self.set_r16(R16::AF, 0x11B0);
         self.set_r16(R16::BC, 0x0013);
         self.set_r16(R16::DE, 0x00D8);
         self.set_r16(R16::HL, 0x014D);
@@ -1373,23 +1374,23 @@ mod tests {
 
     #[test]
     fn test_blargg() {
-        let rom = fs::read("roms/dmg-acid2.gb").unwrap();
+        let rom = fs::read("roms/Pokemon - Silver Version (UE) [C][!].gbc").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         let mut flag = true;
         loop {
-            // println!(
-            //     "{:#X} {:#X} halted: {}",
-            //     cpu.pc,
-            //     cpu.mmu.get_byte(cpu.pc),
-            //     cpu.halted
-            // );
+            println!(
+                "{:#X} {:#X} halted: {}",
+                cpu.pc,
+                cpu.mmu.get_byte(cpu.pc),
+                cpu.halted
+            );
             cpu.tick();
-            // if flag {
-            //     cpu.keydown(7);
-            // } else {
-            //     cpu.keyup(7);
-            // }
+            if flag {
+                cpu.keydown(7);
+            } else {
+                cpu.keyup(7);
+            }
             flag = !flag;
         }
     }

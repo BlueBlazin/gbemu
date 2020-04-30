@@ -1,6 +1,4 @@
 use crate::cpu::EmulationMode;
-use std::cmp::Ordering;
-use std::collections::BinaryHeap;
 
 const VRAM_BANK_SIZE: usize = 0x2000;
 const OAM_SIZE: usize = 0xA0;
