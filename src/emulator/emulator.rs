@@ -68,9 +68,9 @@ impl Emulator {
                 .unwrap();
             filter.set_type(BiquadFilterType::Lowpass);
             let source = self.ctx.create_buffer_source().unwrap();
-            // source.set_buffer(Some(&buffer));
-            // source.start_with_when(start).unwrap();
-            // source.connect_with_audio_node(&filter).unwrap();
+            source.set_buffer(Some(&buffer));
+            source.start_with_when(start).unwrap();
+            source.connect_with_audio_node(&filter).unwrap();
         }
 
         self.start_time = Some(start + TIME_DELTA);

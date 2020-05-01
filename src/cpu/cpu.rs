@@ -1,3 +1,4 @@
+use crate::cpu::EmulationMode;
 use crate::joypad::joypad::Key;
 use crate::memory::mmu::{DmaType, Mmu};
 
@@ -46,18 +47,26 @@ pub struct Cpu {
     pub cycles: usize,
     ime: bool,
     halted: bool,
+    emu_mode: EmulationMode,
 }
 
 impl Cpu {
     pub fn new(data: Vec<u8>) -> Self {
+        let emu_mode = if data[0x0143] & 0x80 != 0 {
+            EmulationMode::Cgb
+        } else {
+            EmulationMode::Dmg
+        };
+
         Cpu {
             r: [0; 8],
             pc: 0,
             sp: 0,
-            mmu: Mmu::new(data),
+            mmu: Mmu::new(data, emu_mode.clone()),
             cycles: 0,
             ime: true,
             halted: false,
+            emu_mode,
         }
     }
 
@@ -175,8 +184,12 @@ impl Cpu {
 
     #[allow(dead_code)]
     pub fn simulate_bootrom(&mut self) {
+        match self.emu_mode {
+            EmulationMode::Dmg => self.set_r16(R16::AF, 0x01B0),
+            EmulationMode::Cgb => self.set_r16(R16::AF, 0x11B0),
+        }
         // self.set_r16(R16::AF, 0x01B0);
-        self.set_r16(R16::AF, 0x11B0);
+        // self.set_r16(R16::AF, 0x11B0);
         self.set_r16(R16::BC, 0x0013);
         self.set_r16(R16::DE, 0x00D8);
         self.set_r16(R16::HL, 0x014D);

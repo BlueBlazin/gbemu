@@ -38,14 +38,16 @@ pub struct Mmu {
     dma_dst: u16,
     hdma_ptr: u16,
     transfer_length: usize,
+    #[allow(dead_code)]
+    emu_mode: EmulationMode,
 }
 
 impl Mmu {
-    pub fn new(data: Vec<u8>) -> Self {
+    pub fn new(data: Vec<u8>, emu_mode: EmulationMode) -> Self {
         Mmu {
             bootrom: Bootrom::new(),
             cartridge: Cartridge::new(data),
-            gpu: Gpu::new(EmulationMode::Cgb),
+            gpu: Gpu::new(emu_mode.clone()),
             joypad: Joypad::new(),
             apu: Apu::new(),
             ie: 0,
@@ -58,6 +60,7 @@ impl Mmu {
             dma_dst: 0,
             hdma_ptr: 0,
             transfer_length: 0,
+            emu_mode,
         }
     }
 
