@@ -344,8 +344,10 @@ impl Gpu {
     }
 
     fn put_win_pixel(&mut self, i: usize) {
-        let (lx, ly) = (i as u8, self.position.ly);
-        let (wx, wy) = (self.position.window_x, self.position.window_y);
+        // let (lx, ly) = (i as u8, self.position.ly);
+        let lx = i as u8;
+        // let (wx, wy) = (self.position.window_x, self.position.window_y);
+        let wx = self.position.window_x;
 
         // get idx of the coincident window tile
         let base_addr = self.lcdc.win_tilemap();

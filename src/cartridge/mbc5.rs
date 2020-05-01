@@ -67,7 +67,15 @@ impl Mbc for Mbc5 {
             0x4000..=0x5FFF => {
                 self.ram_bank = value & 0x0F;
             }
-            _ => panic!("Address out of bounds."),
+            0x6000..=0x7FFF => (),
+            0xA000..=0xBFFF => {
+                if self.ram_enabled {
+                    let addr =
+                        self.ram_bank as usize * RAM_BANK_SIZE + (addr as usize - RAM_OFFSET);
+                    self.ram[addr] = value;
+                }
+            }
+            _ => panic!("Address out of bounds. {:#X}", addr),
         }
     }
 }

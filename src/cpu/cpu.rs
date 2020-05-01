@@ -1374,17 +1374,17 @@ mod tests {
 
     #[test]
     fn test_blargg() {
-        let rom = fs::read("roms/Pokemon - Silver Version (UE) [C][!].gbc").unwrap();
+        let rom = fs::read("roms/Pokemon - Yellow Version (UE) [C][!].gbc").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         let mut flag = true;
         loop {
-            println!(
-                "{:#X} {:#X} halted: {}",
-                cpu.pc,
-                cpu.mmu.get_byte(cpu.pc),
-                cpu.halted
-            );
+            // println!(
+            //     "{:#X} {:#X} halted: {}",
+            //     cpu.pc,
+            //     cpu.mmu.get_byte(cpu.pc),
+            //     cpu.halted
+            // );
             cpu.tick();
             if flag {
                 cpu.keydown(7);
