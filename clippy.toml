@@ -1,0 +1,2 @@
+[lints.'cfg(feature = "clippy")']
+verbose-bit-mask-threshold = 16

@@ -72,7 +72,7 @@ impl Mbc for Mbc1 {
             }
             0x4000..=0x5FFF => match self.mode {
                 Mode::RomBanking => {
-                    self.rom_bank = (value & 0x03) << 5 | self.rom_bank;
+                    self.rom_bank |= (value & 0x03) << 5;
                 }
                 Mode::RamBanking => {
                     self.ram_bank = value & 0x03;

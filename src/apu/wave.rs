@@ -36,7 +36,7 @@ impl WaveChannel {
     pub fn dac(&self) -> f32 {
         let out = match self.volume_code {
             0 => (self.enabled as u8 * (self.table[self.i] >> 4)) as f32,
-            1 => (self.enabled as u8 * (self.table[self.i] >> 0)) as f32,
+            1 => (self.enabled as u8 * self.table[self.i]) as f32,
             2 => (self.enabled as u8 * (self.table[self.i] >> 1)) as f32,
             3 => (self.enabled as u8 * (self.table[self.i] >> 2)) as f32,
             _ => panic!("Invalid volume code."),
@@ -52,14 +52,14 @@ impl WaveChannel {
 
         self.clock += cycles;
         if self.clock >= self.period {
-            self.clock = self.clock - self.period;
+            self.clock -= self.period;
             self.i = (self.i + 1) % 32;
         }
     }
 
     pub fn length_tick(&mut self) {
         if self.length_enabled && self.length_counter > 0 {
-            self.length_counter = self.length_counter - 1;
+            self.length_counter -= 1;
             if self.length_counter == 0 {
                 self.enabled = false;
                 self.length_enabled = false;
@@ -107,7 +107,7 @@ impl WaveChannel {
             }
             0xFF30..=0xFF3F => {
                 let offset = (addr - 0xFF30) as usize * 2;
-                self.table[offset + 0] = value >> 4;
+                self.table[offset] = value >> 4;
                 self.table[offset + 1] = value & 0x0F;
             }
             _ => (),

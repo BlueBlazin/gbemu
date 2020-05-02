@@ -1,12 +1,11 @@
-// use crate::cartridge::cartridge::Cartridge;
-use crate::apu::apu::Apu;
-use crate::cartridge::cartridge::Cartridge;
+use crate::apu::Apu;
+use crate::cartridge::Cartridge;
 use crate::cpu::EmulationMode;
-use crate::gpu::gpu::{Gpu, GpuMode};
-use crate::joypad::joypad::Joypad;
+use crate::gpu::{Gpu, GpuMode};
+use crate::joypad::Joypad;
 use crate::memory::bootrom::Bootrom;
 use crate::memory::wram::Wram;
-use crate::timer::timer::Timer;
+use crate::timer::Timer;
 
 const HRAM_SIZE: usize = 0x007F;
 const HRAM_OFFSET: u16 = 0xFF80;

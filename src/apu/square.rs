@@ -37,7 +37,7 @@ impl Timer {
         }
         self.clock += cycles;
         if self.clock >= self.period {
-            self.clock = self.clock - self.period;
+            self.clock -= self.period;
             self.step = (self.step + 1) % 8;
         }
     }
@@ -165,9 +165,7 @@ impl SquareWave {
         };
     }
 
-    pub fn sweep_tick(&mut self) {
-        ()
-    }
+    pub fn sweep_tick(&mut self) {}
 
     pub fn length_tick(&mut self) {
         if self.length.enabled && self.length.counter > 0 {
@@ -186,7 +184,7 @@ impl SquareWave {
         self.volume.clock += 1;
 
         if self.volume.clock >= self.volume.period {
-            self.volume.clock = self.volume.clock - self.volume.period;
+            self.volume.clock -= self.volume.period;
 
             self.volume.volume = match self.volume.direction {
                 EnvelopeDirection::Increase if self.volume.volume < 15 => self.volume.volume + 1,
