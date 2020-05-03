@@ -102,7 +102,7 @@ impl WaveChannel {
                 self.freq = (self.freq & 0xFF) | (((value & 0x07) as u16) << 8);
                 self.period = (2048 - self.freq as usize) * 2;
                 if (value & 0x80) != 0 {
-                    self.reset();
+                    self.restart();
                 }
             }
             0xFF30..=0xFF3F => {
@@ -114,7 +114,7 @@ impl WaveChannel {
         }
     }
 
-    pub fn reset(&mut self) {
+    pub fn restart(&mut self) {
         self.enabled = true;
         self.length_counter = 256;
         self.i = 0;
