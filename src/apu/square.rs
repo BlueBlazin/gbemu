@@ -68,40 +68,16 @@ impl Default for Sweep {
     }
 }
 
-// ----------------------------------------------------------------------------------------------------
-
-// pub enum EnvelopeDirection {
-//     Increase,
-//     Decrease,
-// }
-
-// pub struct VolumeEnvelope {
-//     pub volume: u8,
-//     pub direction: EnvelopeDirection,
-//     pub clock: usize,
-//     pub period: usize,
-// }
-
-// impl Default for VolumeEnvelope {
-//     fn default() -> Self {
-//         Self {
-//             volume: 0,
-//             direction: EnvelopeDirection::Decrease,
-//             clock: 0,
-//             period: 0,
-//         }
-//     }
-// }
-
-// impl VolumeEnvelope {
-//     pub fn set_direction(&mut self, add: bool) {
-//         self.direction = if add {
-//             EnvelopeDirection::Increase
-//         } else {
-//             EnvelopeDirection::Decrease
-//         };
-//     }
-// }
+impl Sweep {
+    fn next_freq(&mut self) -> u16 {
+        if self.negate {
+            self.shadow_freq
+                .wrapping_sub(self.shadow_freq >> self.shift)
+        } else {
+            self.shadow_freq + self.shadow_freq >> self.shift
+        }
+    }
+}
 
 // ----------------------------------------------------------------------------------------------------
 
@@ -166,7 +142,47 @@ impl SquareWave {
         };
     }
 
-    pub fn sweep_tick(&mut self) {}
+    pub fn sweep_tick(&mut self) {
+        self.sweep.clock += 1;
+        if self.sweep.clock >= self.sweep.period {
+            self.sweep.clock -= self.sweep.period;
+            // The overflow check simply calculates the new frequency
+            // and if this is greater than 2047, square 1 is disabled.
+
+            // The sweep timer is clocked at 128 Hz by the frame sequencer.
+            // When it generates a clock and the sweep's internal enabled flag is set and
+            // the sweep period is not zero, a new frequency is calculated and the overflow
+            // check is performed. If the new frequency is 2047 or less and the sweep shift
+            // is not zero, this new frequency is written back to the shadow frequency
+            // and square 1's frequency in NR13 and NR14, then frequency calculation and overflow
+            // check are run AGAIN immediately using this new value, but this second new frequency is not written back.
+
+            // Square 1's frequency can be modified via NR13 and NR14 while sweep
+            // is active, but the shadow frequency won't be affected so the next time the
+            // sweep updates the channel's frequency this modification will be lost.
+
+            if self.sweep.active {
+                let next_freq = self.sweep_and_overflow();
+
+                if self.sweep.shift != 0 {
+                    self.sweep.shadow_freq = next_freq;
+                    self.registers.nrx3 = (next_freq & 0xFF) as u8;
+                    self.registers.nrx4 = ((next_freq >> 8) & 0x07) as u8;
+                    self.timer.set_period(next_freq);
+                }
+
+                self.sweep_and_overflow();
+            }
+        }
+    }
+
+    fn sweep_and_overflow(&mut self) -> u16 {
+        let next_freq = self.sweep.next_freq();
+        if next_freq > 2047 {
+            self.enabled = false;
+        }
+        next_freq
+    }
 
     pub fn length_tick(&mut self) {
         if self.length.enabled && self.length.counter > 0 {
