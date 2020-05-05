@@ -24,7 +24,8 @@ impl Cartridge {
             0x01..=0x03 => Box::from(Mbc1::new(data)),
             0x0F..=0x13 => Box::from(Mbc3::new(data)),
             0x19..=0x1E => Box::from(Mbc5::new(data)),
-            n => panic!("Unsupported MBC type. Code {:#X}", n),
+            // n => panic!("Unsupported MBC type. Code {:#X}", n),
+            _ => Box::from(Mbc0::new(data)),
         };
 
         Self { mbc }

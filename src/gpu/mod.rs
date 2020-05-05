@@ -8,10 +8,34 @@ const SCREEN_HEIGHT: usize = 144;
 const SCREEN_DEPTH: usize = 4;
 const VRAM_OFFSET: u16 = 0x8000;
 const OAM_OFFSET: u16 = 0xFE00;
+const COLOR_CORRECT_CURVES: [u8; 32] = [
+    0, 5, 8, 11, 16, 22, 28, 36, 43, 51, 59, 67, 77, 87, 97, 107, 119, 130, 141, 153, 166, 177,
+    188, 200, 209, 221, 230, 238, 245, 249, 252, 255,
+];
 
 macro_rules! bit {
     ( $upper:expr , $lower:expr , $mask:expr ) => {
         ((((($upper & $mask) != 0) as u8) << 1) | ((($lower & $mask) != 0) as u8))
+    };
+}
+
+macro_rules! min {
+    ( $left:expr , $right:expr ) => {
+        if $left <= $right {
+            $left
+        } else {
+            $right
+        }
+    };
+}
+
+macro_rules! max {
+    ( $left:expr , $right:expr ) => {
+        if $left >= $right {
+            $left
+        } else {
+            $right
+        }
     };
 }
 
@@ -62,6 +86,7 @@ impl From<&[u8]> for Sprite {
     }
 }
 
+#[derive(Debug)]
 struct BgAttr {
     bgp_num: usize,
     vram_bank: usize,
@@ -445,7 +470,6 @@ impl Gpu {
 
     fn tiledata_addr(&self, sel: u8, idx: u8) -> u16 {
         if sel == 0 {
-            // 0x9000u16.wrapping_add((idx as i8 as i16 * 16) as u16)
             0x8800u16 + (idx as i8 as i16 + 128) as u16 * 16
         } else {
             0x8000u16 + (idx as u16 * 16)
@@ -505,11 +529,6 @@ impl Gpu {
                 } else {
                     bit!(upper, lower, 0x80 >> j)
                 };
-
-                // let pixel_type = &self.pixel_types[col as usize];
-                // let below_bg = (self.lcdc.lcdc0 != 0)
-                //     && (pixel_type == &PixelType::BgPriorityOverride
-                //         || (!sprite.has_priority && pixel_type == &PixelType::BgColorOpaque));
 
                 let below_bg = match &self.pixel_types[col as usize] {
                     _ if self.lcdc.lcdc0 == 0 => false,
@@ -579,11 +598,65 @@ impl Gpu {
         let g = g as u32;
         let b = b as u32;
 
+        // MatCurrie
         (
             ((r << 3) | (r >> 2)) as u8,
             ((g << 3) | (g >> 2)) as u8,
             ((b << 3) | (b >> 2)) as u8,
         )
+
+        // Gambatte
+        // (
+        //     ((r * 13 + g * 2 + b) >> 1) as u8,
+        //     ((g * 3 + b) << 1) as u8,
+        //     ((r * 3 + g * 2 + b * 11) >> 1) as u8,
+        // )
+
+        // byuu formula
+        // let rc = r * 26 + g * 4 + b * 2;
+        // let gc = g * 24 + b * 8;
+        // let bc = r * 6 + g * 4 + b * 22;
+        // (
+        //     (min!(960, rc) >> 2) as u8,
+        //     (min!(960, gc) >> 2) as u8,
+        //     (min!(960, bc) >> 2) as u8,
+        // )
+
+        // SameBoy color curves
+        // (
+        //     COLOR_CORRECT_CURVES[r as usize],
+        //     COLOR_CORRECT_CURVES[g as usize],
+        //     COLOR_CORRECT_CURVES[b as usize],
+        // )
+
+        // // SameBoy correction
+        // let r = COLOR_CORRECT_CURVES[r as usize];
+        // let g = COLOR_CORRECT_CURVES[g as usize];
+        // let b = COLOR_CORRECT_CURVES[b as usize];
+
+        // let mut new_r = r;
+        // let mut new_g = (g * 3 + b) / 4;
+        // let mut new_b = b;
+
+        // let old_max = max!(r, max!(g, b));
+        // let new_max = max!(new_r, max!(new_g, new_b));
+
+        // if new_max != 0 {
+        //     new_r = new_r * old_max / new_max;
+        //     new_g = new_g * old_max / new_max;
+        //     new_b = new_b * old_max / new_max;
+        // }
+
+        // let old_min = min!(r, min!(g, b));
+        // let new_min = min!(r, min!(g, b));
+
+        // if new_min != 0xFF {
+        //     new_r = 0xFF - (0xFF - new_r) * (0xFF - old_min) / (0xFF - new_min);
+        //     new_g = 0xFF - (0xFF - new_g) * (0xFF - old_min) / (0xFF - new_min);
+        //     new_b = 0xFF - (0xFF - new_b) * (0xFF - old_min) / (0xFF - new_min);
+        // }
+
+        // (new_r as u8, new_g as u8, new_b as u8)
     }
 
     pub fn tick(&mut self, cycles: usize) {
@@ -680,6 +753,7 @@ impl Gpu {
                 self.lcdc.display_enable = value & 0x80;
                 if old_display_enable != 0 && self.lcdc.display_enable == 0 {
                     self.change_mode(GpuMode::HBlank);
+                    // self.stat.mode = GpuMode::HBlank;
                     self.position.ly = 0;
                     self.win_counter = 0;
                     self.clock = 0;
@@ -709,27 +783,31 @@ impl Gpu {
             0xFF4A => self.position.window_y = value,
             0xFF4B => self.position.window_x = value,
             0xFF4F => self.vram_bank = (value & 0x01) as usize,
-            0xFF68 if self.emu_mode == EmulationMode::Cgb => {
+            0xFF68 => {
                 self.cgbp.bgp_idx = value & 0x3F;
                 self.cgbp.bgp_auto_incr = (value & 0x80) != 0;
             }
-            0xFF69 if self.emu_mode == EmulationMode::Cgb => {
-                self.bgp_ram[self.cgbp.bgp_idx as usize] = value;
+            0xFF69 => {
+                if self.stat.mode != GpuMode::PixelTransfer {
+                    self.bgp_ram[self.cgbp.bgp_idx as usize] = value;
+                }
                 if self.cgbp.bgp_auto_incr {
                     self.cgbp.bgp_idx = (self.cgbp.bgp_idx + 1) % 0x40;
                 }
             }
-            0xFF6A if self.emu_mode == EmulationMode::Cgb => {
+            0xFF6A => {
                 self.cgbp.obp_idx = value & 0x3F;
                 self.cgbp.obp_auto_incr = (value & 0x80) != 0;
             }
-            0xFF6B if self.emu_mode == EmulationMode::Cgb => {
-                self.obp_ram[self.cgbp.obp_idx as usize] = value;
+            0xFF6B => {
+                if self.stat.mode != GpuMode::PixelTransfer {
+                    self.obp_ram[self.cgbp.obp_idx as usize] = value;
+                }
                 if self.cgbp.obp_auto_incr {
                     self.cgbp.obp_idx = (self.cgbp.obp_idx + 1) % 0x40;
                 }
             }
-            _ => panic!("Unexpected addr in gpu.set_byte"),
+            _ => panic!("Unexpected addr in gpu.set_byte {:#X}", addr),
         }
     }
 

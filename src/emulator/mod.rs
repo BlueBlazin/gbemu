@@ -44,7 +44,8 @@ impl Emulator {
 
     pub fn update_with_audio(&mut self) {
         loop {
-            self.update_frame();
+            // self.update_frame();
+            self.cpu.frame();
             if let (Some(left), Some(right)) = self.cpu.mmu.apu.get_next_buffer() {
                 self.play_audio_sample(left, right);
                 break;
@@ -52,7 +53,7 @@ impl Emulator {
         }
     }
 
-    pub fn update_frame(&mut self) {
+    fn update_frame(&mut self) {
         let mut cycles = 0;
         while cycles < MAX_CYCLES {
             cycles += self.cpu.tick();

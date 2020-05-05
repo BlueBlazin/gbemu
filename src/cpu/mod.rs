@@ -3,10 +3,40 @@ pub mod opcodes;
 use crate::joypad::Key;
 use crate::memory::mmu::{DmaType, Mmu};
 
+const MAX_CYCLES: usize = 69905;
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum EmulationMode {
     Dmg,
     Cgb,
+}
+
+pub enum CgbSpeed {
+    Normal,
+    Double,
+}
+
+pub struct CgbMode {
+    pub speed: CgbSpeed,
+    pub prepare_speed_switch: u8,
+}
+
+impl CgbMode {
+    pub fn new() -> Self {
+        Self {
+            speed: CgbSpeed::Normal,
+            prepare_speed_switch: 0,
+        }
+    }
+}
+
+impl From<&CgbMode> for u8 {
+    fn from(value: &CgbMode) -> Self {
+        match value.speed {
+            CgbSpeed::Normal => value.prepare_speed_switch,
+            CgbSpeed::Double => 0x1 << 7 | value.prepare_speed_switch,
+        }
+    }
 }
 
 /// The 8 bit registers.
@@ -55,6 +85,7 @@ pub struct Cpu {
     ime: bool,
     halted: bool,
     emu_mode: EmulationMode,
+    stopped: bool,
 }
 
 impl Cpu {
@@ -74,6 +105,7 @@ impl Cpu {
             ime: true,
             halted: false,
             emu_mode,
+            stopped: false,
         }
     }
 
@@ -109,12 +141,29 @@ impl Cpu {
         self.mmu.screen()
     }
 
+    pub fn frame(&mut self) {
+        let max_cycles = match self.mmu.cgb_mode.speed {
+            CgbSpeed::Normal => MAX_CYCLES,
+            CgbSpeed::Double => MAX_CYCLES * 2,
+        };
+        let mut cycles = 0;
+        while cycles < max_cycles {
+            cycles += self.tick();
+        }
+    }
+
     pub fn tick(&mut self) -> usize {
         self.cycles = 0;
 
         if self.halted {
             self.cycles += 4;
             self.service_interrupts();
+        } else if self.stopped {
+            self.cycles += 4;
+            if (self.memory_get(0xFF00) & 0xF) != 0 {
+                self.stopped = false;
+                self.cycles += 4;
+            }
         } else {
             match self.mmu.dma {
                 DmaType::GPDma => self.gdma_tick(),
@@ -129,11 +178,15 @@ impl Cpu {
         // Step Timers
         self.mmu.timer_tick(self.cycles);
 
+        let speed_aware_cycles = match self.mmu.cgb_mode.speed {
+            CgbSpeed::Normal => self.cycles,
+            CgbSpeed::Double => self.cycles / 2,
+        };
         // Step GPU
-        self.mmu.gpu_tick(self.cycles);
+        self.mmu.gpu_tick(speed_aware_cycles);
 
         // Step APU
-        self.mmu.apu_tick(self.cycles);
+        self.mmu.apu_tick(speed_aware_cycles);
 
         self.cycles
     }
@@ -144,11 +197,13 @@ impl Cpu {
     }
 
     fn gdma_tick(&mut self) {
-        self.cycles += self.mmu.gdma_tick();
+        let cycles = self.mmu.gdma_tick();
+        self.cycles += cycles;
     }
 
     fn hdma_tick(&mut self) {
-        self.cycles += self.mmu.hdma_tick();
+        let cycles = self.mmu.hdma_tick();
+        self.cycles += cycles;
     }
 
     fn service_interrupts(&mut self) {
@@ -578,7 +633,15 @@ impl Cpu {
     }
 
     pub fn stop(&mut self) {
-        unimplemented!()
+        if self.mmu.cgb_mode.prepare_speed_switch != 0x0 {
+            self.mmu.cgb_mode.speed = match self.mmu.cgb_mode.speed {
+                CgbSpeed::Normal => CgbSpeed::Double,
+                CgbSpeed::Double => CgbSpeed::Normal,
+            };
+            self.mmu.cgb_mode.prepare_speed_switch = 0x0;
+        } else {
+            self.stopped = true;
+        }
     }
 
     pub fn halt(&mut self) {
@@ -1066,6 +1129,14 @@ impl Cpu {
     //  Atomic operations
     // -------------------------------------------------------------
 
+    #[inline]
+    fn add_cycles(&mut self, cycles: usize) {
+        self.cycles += match self.mmu.cgb_mode.speed {
+            CgbSpeed::Normal => cycles,
+            CgbSpeed::Double => cycles * 2,
+        };
+    }
+
     /// Fetch next byte at pc from memory and increment pc.
     pub fn fetch(&mut self) -> u8 {
         let byte = self.memory_get(self.pc);
@@ -1392,7 +1463,9 @@ mod tests {
 
     #[test]
     fn test_blargg() {
-        let rom = fs::read("roms/Pokemon - Yellow Version (UE) [C][!].gbc").unwrap();
+        let rom = fs::read("roms/Pokemon - Crystal Version (USA, Europe) (Rev A).gbc").unwrap();
+        // let rom = fs::read("roms/Pokemon - Silver Version (UE) [C][!].gbc").unwrap();
+        // let rom = fs::read("roms/02-interrupts.gb").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         let mut flag = true;
@@ -1404,11 +1477,11 @@ mod tests {
             //     cpu.halted
             // );
             cpu.tick();
-            if flag {
-                cpu.keydown(7);
-            } else {
-                cpu.keyup(7);
-            }
+            // if flag {
+            //     cpu.keydown(7);
+            // } else {
+            //     cpu.keyup(7);
+            // }
             flag = !flag;
         }
     }

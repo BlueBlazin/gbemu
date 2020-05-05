@@ -507,7 +507,7 @@ def main(f):
     custom_match_arm("0x76", "self.halt();", f)
 
     # 8.
-    custom_match_arm("0x10", "self.stop();", f)
+    custom_match_arm("0x10", ["self.stop();", "self.fetch();"], f)
 
     # 9.
     custom_match_arm("0xF3", "self.di();", f)

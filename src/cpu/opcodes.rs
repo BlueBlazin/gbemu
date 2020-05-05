@@ -1,6 +1,6 @@
 /// This is a generated file. Do not modify.
 /// See `opcodes.py` to understand how this file was generated.
-use crate::cpu::{Cpu, R8, R16, Addr, Flag};
+use crate::cpu::{Addr, Cpu, Flag, R16, R8};
 
 impl Cpu {
 	pub fn decode_exec(&mut self, opcode: u8) {
@@ -738,6 +738,7 @@ impl Cpu {
 			}
 			0x10 => {
 				self.stop();
+				self.fetch();
 			}
 			0xF3 => {
 				self.di();

@@ -1,6 +1,6 @@
 use crate::apu::Apu;
 use crate::cartridge::Cartridge;
-use crate::cpu::EmulationMode;
+use crate::cpu::{CgbMode, EmulationMode};
 use crate::gpu::{Gpu, GpuMode};
 use crate::joypad::Joypad;
 use crate::memory::bootrom::Bootrom;
@@ -39,6 +39,7 @@ pub struct Mmu {
     transfer_length: usize,
     #[allow(dead_code)]
     emu_mode: EmulationMode,
+    pub cgb_mode: CgbMode,
 }
 
 impl Mmu {
@@ -60,6 +61,7 @@ impl Mmu {
             hdma_ptr: 0,
             transfer_length: 0,
             emu_mode,
+            cgb_mode: CgbMode::new(),
         }
     }
 
@@ -69,12 +71,18 @@ impl Mmu {
 
     pub fn gdma_tick(&mut self) -> usize {
         let src_addr = self.dma_src & 0xFFF0;
-        let dst_addr = self.dma_dst & 0x1FF0;
+        let dst_addr = 0x8000 + (self.dma_dst & 0x1FF0);
+        // println!(
+        //     "src: {:#X} {:#X}, dst: {:#X}",
+        //     self.dma_src,
+        //     src_addr,
+        //     0x8000 + dst_addr
+        // );
         self.gpu.gdma_active = true;
 
-        for _ in 0..self.transfer_length {
-            let value = self.get_byte(src_addr);
-            self.set_byte(dst_addr, value);
+        for i in 0..self.transfer_length {
+            let value = self.get_byte(src_addr + i as u16);
+            self.set_byte(dst_addr + i as u16, value);
         }
 
         self.dma = DmaType::NoDma;
@@ -85,11 +93,12 @@ impl Mmu {
 
     pub fn hdma_tick(&mut self) -> usize {
         let src_addr = self.dma_src & 0xFFF0;
-        let dst_addr = self.dma_dst & 0x1FF0;
+        let dst_addr = 0x8000 + (self.dma_dst & 0x1FF0);
+        println!("hdma");
 
-        for _ in 0..16 {
-            let value = self.get_byte(src_addr + self.hdma_ptr);
-            self.set_byte(dst_addr, value);
+        for i in 0..16 {
+            let value = self.get_byte(src_addr + self.hdma_ptr + i);
+            self.set_byte(dst_addr + self.hdma_ptr + i, value);
         }
 
         self.hdma_ptr += 0x10;
@@ -138,7 +147,7 @@ impl Mmu {
             // D000-DFFF   4KB Work RAM Bank 1
             0xC000..=0xDFFF => self.wram.get_byte(addr),
             // E000-FDFF   Same as C000-DDFF (ECHO)
-            0xE000..=0xFDFF => self.wram.get_byte(WRAM_OFFSET + addr - ECHO_OFFSET),
+            0xE000..=0xFDFF => self.wram.get_byte(WRAM_OFFSET + (addr - ECHO_OFFSET)),
             // FE00-FE9F   Sprite Attribute Table (OAM)
             0xFE00..=0xFE9F => self.gpu.get_byte(addr),
             // FEA0-FEFF   Not Usable
@@ -169,10 +178,12 @@ impl Mmu {
             0xFF46 => 0xFF,
             0xFF47..=0xFF4B => self.gpu.get_byte(addr),
             0xFF4C..=0xFF7F => match addr {
+                0xFF4D => u8::from(&self.cgb_mode),
                 0xFF4F => self.gpu.get_byte(addr),
                 0xFF55 => match self.dma {
-                    DmaType::GPDma | DmaType::HBlankDma => 0x01,
-                    _ => 0x00,
+                    DmaType::GPDma => 0xFF,
+                    DmaType::HBlankDma => 0xFF,
+                    _ => 0xFF,
                 },
                 0xFF68..=0xFF6B => self.gpu.get_byte(addr),
                 0xFF70 => self.wram.get_byte(addr),
@@ -200,7 +211,9 @@ impl Mmu {
             // D000-DFFF   4KB Work RAM Bank 1
             0xC000..=0xDFFF => self.wram.set_byte(addr, value),
             // E000-FDFF   Same as C000-DDFF (ECHO)
-            0xE000..=0xFDFF => self.wram.set_byte(WRAM_OFFSET + addr - ECHO_OFFSET, value),
+            0xE000..=0xFDFF => self
+                .wram
+                .set_byte(WRAM_OFFSET + (addr - ECHO_OFFSET), value),
             // FE00-FE9F   Sprite Attribute Table (OAM)
             0xFE00..=0xFE9F => self.gpu.set_byte(addr, value),
             // FEA0-FEFF   Not Usable
@@ -224,7 +237,10 @@ impl Mmu {
             0xFF40..=0xFF45 => self.gpu.set_byte(addr, value),
             0xFF46 => self.launch_dma_transfer(value),
             0xFF47..=0xFF4B => self.gpu.set_byte(addr, value),
-            0xFF4C..=0xFF4E => println!("Writing to io ports {:#X}", addr),
+            0xFF4C..=0xFF4E => match addr {
+                0xFF4D => self.cgb_mode.prepare_speed_switch = value & 0x1,
+                _ => println!("Write to io ports {:#X}", addr),
+            },
             0xFF4F => self.gpu.set_byte(addr, value),
             0xFF50 => {
                 if self.bootrom.is_active && value == 1 {
@@ -234,9 +250,9 @@ impl Mmu {
                 }
             }
             0xFF51..=0xFF7F => match addr {
-                0xFF51 => self.dma_src = (self.dma_src & 0x00FF) | (value as u16) << 8,
+                0xFF51 => self.dma_src = (self.dma_src & 0x00FF) | ((value as u16) << 8),
                 0xFF52 => self.dma_src = (self.dma_src & 0xFF00) | value as u16,
-                0xFF53 => self.dma_dst = (self.dma_dst & 0x00FF) | (value as u16) << 8,
+                0xFF53 => self.dma_dst = (self.dma_dst & 0x00FF) | ((value as u16) << 8),
                 0xFF54 => self.dma_dst = (self.dma_dst & 0xFF00) | value as u16,
                 0xFF55 => {
                     self.dma = match value & 0x80 {

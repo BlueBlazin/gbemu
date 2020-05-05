@@ -52,7 +52,7 @@ pub struct Sweep {
     pub clock: usize,
     pub period: usize,
     pub negate: bool,
-    pub active: bool,
+    pub enabled: bool,
 }
 
 impl Default for Sweep {
@@ -63,7 +63,7 @@ impl Default for Sweep {
             clock: 0,
             period: 0,
             negate: true,
-            active: false,
+            enabled: false,
         }
     }
 }
@@ -146,9 +146,6 @@ impl SquareWave {
         self.sweep.clock += 1;
         if self.sweep.clock >= self.sweep.period {
             self.sweep.clock -= self.sweep.period;
-            // The overflow check simply calculates the new frequency
-            // and if this is greater than 2047, square 1 is disabled.
-
             // The sweep timer is clocked at 128 Hz by the frame sequencer.
             // When it generates a clock and the sweep's internal enabled flag is set and
             // the sweep period is not zero, a new frequency is calculated and the overflow
@@ -161,10 +158,10 @@ impl SquareWave {
             // is active, but the shadow frequency won't be affected so the next time the
             // sweep updates the channel's frequency this modification will be lost.
 
-            if self.sweep.active {
+            if self.sweep.enabled && self.sweep.period != 0 {
                 let next_freq = self.sweep_and_overflow();
 
-                if self.sweep.shift != 0 {
+                if next_freq <= 2047 && self.sweep.shift != 0 {
                     self.sweep.shadow_freq = next_freq;
                     self.registers.nrx3 = (next_freq & 0xFF) as u8;
                     self.registers.nrx4 = ((next_freq >> 8) & 0x07) as u8;
@@ -246,13 +243,13 @@ impl SquareWave {
             }
             0xFF13 | 0xFF18 => {
                 self.registers.nrx3 = value;
-                self.sweep.shadow_freq = (self.sweep.shadow_freq & 0x700) | value as u16;
+                // self.sweep.shadow_freq = (self.sweep.shadow_freq & 0x700) | value as u16;
             }
             0xFF14 | 0xFF19 => {
                 self.registers.nrx4 = value;
-                self.sweep.shadow_freq =
-                    (self.sweep.shadow_freq & 0xFF) | (((value & 0x07) as u16) << 8);
-                self.timer.set_period(self.sweep.shadow_freq);
+                // self.sweep.shadow_freq =
+                //     (self.sweep.shadow_freq & 0xFF) | (((value & 0x07) as u16) << 8);
+                // self.timer.set_period(self.sweep.shadow_freq);
                 self.length.enabled = (value & 0x40) != 0;
                 if (value & 0x80) != 0 {
                     self.restart();
@@ -267,10 +264,27 @@ impl SquareWave {
         if self.length.counter == 0 {
             self.length.counter = 64;
         }
+
+        // During a trigger event, several things occur:
+        //     Square 1's frequency is copied to the shadow register.
+        //     The sweep timer is reloaded.
+        //     The internal enabled flag is set if either the sweep period or shift are non-zero, cleared otherwise.
+        //     If the sweep shift is non-zero, frequency calculation and the overflow check are performed immediately.
+        self.sweep.shadow_freq = (self.sweep.shadow_freq & 0x700) | self.registers.nrx3 as u16;
+        self.sweep.shadow_freq =
+            (self.sweep.shadow_freq & 0xFF) | (((self.registers.nrx4 & 0x07) as u16) << 8);
+
+        let freq = self.sweep.shadow_freq;
+
+        self.sweep.clock = 0;
+        self.sweep.enabled = (self.sweep.period != 0) || (self.sweep.shift != 0);
+        if self.sweep.shift != 0 {
+            self.sweep_and_overflow();
+        }
+
         self.timer.step = 0;
-        self.timer.set_period(self.sweep.shadow_freq);
+        self.timer.set_period(freq);
         self.volume.clock = 0;
-        self.sweep.active = false;
         self.volume.volume = (self.registers.nrx2 & 0xF0) >> 4;
 
         if !self.dac_enabled {
