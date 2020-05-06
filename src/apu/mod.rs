@@ -9,6 +9,9 @@ use crate::apu::queue::AudioQueue;
 use crate::apu::square::SquareWave;
 use crate::apu::wave::WaveChannel;
 
+const SAMPLE_RATE: usize = 95;
+const SEQUENCER_PERIOD: usize = 8192;
+
 pub struct AudioRegisters {
     nrx0: u8,
     nrx1: u8,
@@ -28,9 +31,6 @@ impl Default for AudioRegisters {
         }
     }
 }
-
-const SAMPLE_RATE: usize = 95;
-const SEQUENCER_PERIOD: usize = 8192;
 
 pub struct Apu {
     clocks: usize,
@@ -179,5 +179,9 @@ impl Apu {
 
     pub fn get_next_buffer(&mut self) -> (Option<Vec<f32>>, Option<Vec<f32>>) {
         self.samples.dequeue()
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.samples.queue_len()
     }
 }

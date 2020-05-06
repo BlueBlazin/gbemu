@@ -2,7 +2,10 @@ use std::collections::VecDeque;
 use std::mem;
 
 // pub const BUFFER_SIZE: usize = 735;
-pub const BUFFER_SIZE: usize = 736;
+// pub const BUFFER_SIZE: usize = 736;
+pub const BUFFER_SIZE: usize = 1024;
+
+const GAIN: f32 = 0.65;
 
 pub struct AudioQueue {
     pub queue_left: VecDeque<Vec<f32>>,
@@ -23,8 +26,8 @@ impl AudioQueue {
 
     pub fn push(&mut self, left: f32, right: f32) {
         if self.current_left.len() < BUFFER_SIZE {
-            self.current_left.push(left);
-            self.current_right.push(right);
+            self.current_left.push(left * GAIN);
+            self.current_right.push(right * GAIN);
         } else {
             let buffer_left = mem::replace(&mut self.current_left, Vec::new());
             let buffer_right = mem::replace(&mut self.current_right, Vec::new());
@@ -35,5 +38,9 @@ impl AudioQueue {
 
     pub fn dequeue(&mut self) -> (Option<Vec<f32>>, Option<Vec<f32>>) {
         (self.queue_left.pop_front(), self.queue_right.pop_front())
+    }
+
+    pub fn queue_len(&self) -> usize {
+        self.queue_left.len()
     }
 }

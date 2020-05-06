@@ -11,7 +11,7 @@ impl Wram {
     pub fn new() -> Self {
         Self {
             wram: vec![0; WRAM_BANK_SIZE * 8],
-            bank: 0,
+            bank: 1,
         }
     }
 
@@ -31,6 +31,7 @@ impl Wram {
         match addr {
             0xC000..=0xCFFF => self.wram[addr as usize - WRAM_OFFSET] = value,
             0xD000..=0xDFFF => {
+                let old_addr = addr;
                 let addr = self.bank * WRAM_BANK_SIZE + (addr as usize - 0xD000);
                 self.wram[addr] = value;
             }

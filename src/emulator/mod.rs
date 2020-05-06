@@ -4,11 +4,10 @@ use wasm_bindgen::prelude::*;
 use web_sys::AudioContext;
 
 // 4194300
-const MAX_CYCLES: usize = 69905;
 const AUDIO_SAMPLE_RATE: f32 = 44100.0;
 const NUM_AUDIO_CHANNELS: u32 = 1;
 const SAMPLE_DURATION: f64 = BUFFER_SIZE as f64 / AUDIO_SAMPLE_RATE as f64;
-const LATENCY: f64 = 0.001;
+const LATENCY: f64 = 0.000;
 
 #[wasm_bindgen]
 pub struct Emulator {
@@ -42,6 +41,19 @@ impl Emulator {
         self.update_with_audio();
     }
 
+    // pub fn mock_update(&mut self) -> usize {
+    //     let mut frames = 0;
+    //     loop {
+    //         // self.update_frame();
+    //         self.cpu.frame();
+    //         frames += 1;
+    //         if let (Some(left), Some(right)) = self.cpu.mmu.apu.get_next_buffer() {
+    //             break;
+    //         }
+    //     }
+    //     frames
+    // }
+
     pub fn update_with_audio(&mut self) {
         loop {
             // self.update_frame();
@@ -53,12 +65,12 @@ impl Emulator {
         }
     }
 
-    fn update_frame(&mut self) {
-        let mut cycles = 0;
-        while cycles < MAX_CYCLES {
-            cycles += self.cpu.tick();
-        }
-    }
+    // fn update_frame(&mut self) {
+    //     let mut cycles = 0;
+    //     while cycles < MAX_CYCLES {
+    //         cycles += self.cpu.tick();
+    //     }
+    // }
 
     fn play_audio_sample(&mut self, mut left: Vec<f32>, mut right: Vec<f32>) {
         let start_time = match self.next_start_time {
@@ -70,6 +82,7 @@ impl Emulator {
             .ctx
             .create_buffer(NUM_AUDIO_CHANNELS, BUFFER_SIZE as u32, AUDIO_SAMPLE_RATE)
             .unwrap();
+
         buffer
             .copy_to_channel_with_start_in_channel(&mut left, 0, 0)
             .unwrap();
@@ -80,6 +93,7 @@ impl Emulator {
         source
             .connect_with_audio_node(&self.ctx.destination())
             .unwrap();
+
         self.next_start_time = Some(start_time + SAMPLE_DURATION);
     }
 

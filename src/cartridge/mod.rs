@@ -19,6 +19,7 @@ pub struct Cartridge {
 
 impl Cartridge {
     pub fn new(data: Vec<u8>) -> Self {
+        println!("Cart type: {:#X}", data[0x0147]);
         let mbc: Box<dyn Mbc> = match data[0x0147] {
             0x00 => Box::from(Mbc0::new(data)),
             0x01..=0x03 => Box::from(Mbc1::new(data)),

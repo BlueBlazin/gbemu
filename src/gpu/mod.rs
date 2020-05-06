@@ -8,34 +8,10 @@ const SCREEN_HEIGHT: usize = 144;
 const SCREEN_DEPTH: usize = 4;
 const VRAM_OFFSET: u16 = 0x8000;
 const OAM_OFFSET: u16 = 0xFE00;
-const COLOR_CORRECT_CURVES: [u8; 32] = [
-    0, 5, 8, 11, 16, 22, 28, 36, 43, 51, 59, 67, 77, 87, 97, 107, 119, 130, 141, 153, 166, 177,
-    188, 200, 209, 221, 230, 238, 245, 249, 252, 255,
-];
 
 macro_rules! bit {
     ( $upper:expr , $lower:expr , $mask:expr ) => {
         ((((($upper & $mask) != 0) as u8) << 1) | ((($lower & $mask) != 0) as u8))
-    };
-}
-
-macro_rules! min {
-    ( $left:expr , $right:expr ) => {
-        if $left <= $right {
-            $left
-        } else {
-            $right
-        }
-    };
-}
-
-macro_rules! max {
-    ( $left:expr , $right:expr ) => {
-        if $left >= $right {
-            $left
-        } else {
-            $right
-        }
     };
 }
 
@@ -260,6 +236,7 @@ pub struct Gpu {
     pub vram1: Vec<u8>,
     pub bgp_ram: Vec<u8>,
     pub obp_ram: Vec<u8>,
+    pub new_vblank: bool,
     cgbp: ColorPalette,
     emu_mode: EmulationMode,
     oam: Vec<u8>,
@@ -289,6 +266,7 @@ impl Gpu {
             vram1: vec![0; VRAM_BANK_SIZE],
             bgp_ram: vec![0; PALETTE_RAM_SIZE],
             obp_ram: vec![0; PALETTE_RAM_SIZE],
+            new_vblank: false,
             oam: vec![0; OAM_SIZE],
             cgbp: ColorPalette::default(),
             emu_mode,
@@ -728,7 +706,12 @@ impl Gpu {
         match self.stat.mode {
             GpuMode::OamSearch if self.stat.oam_int != 0 => self.request_lcd_interrupt(),
             GpuMode::HBlank if self.stat.hblank_int != 0 => self.request_lcd_interrupt(),
-            GpuMode::VBlank if self.stat.vblank_int != 0 => self.request_lcd_interrupt(),
+            GpuMode::VBlank => {
+                self.new_vblank = true;
+                if self.stat.vblank_int != 0 {
+                    self.request_lcd_interrupt();
+                }
+            }
             _ => (),
         }
     }

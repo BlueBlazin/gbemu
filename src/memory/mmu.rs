@@ -72,12 +72,7 @@ impl Mmu {
     pub fn gdma_tick(&mut self) -> usize {
         let src_addr = self.dma_src & 0xFFF0;
         let dst_addr = 0x8000 + (self.dma_dst & 0x1FF0);
-        // println!(
-        //     "src: {:#X} {:#X}, dst: {:#X}",
-        //     self.dma_src,
-        //     src_addr,
-        //     0x8000 + dst_addr
-        // );
+
         self.gpu.gdma_active = true;
 
         for i in 0..self.transfer_length {
@@ -88,15 +83,14 @@ impl Mmu {
         self.dma = DmaType::NoDma;
         self.gpu.gdma_active = false;
 
-        4 * self.transfer_length
+        8 * (self.transfer_length / 0x10)
     }
 
     pub fn hdma_tick(&mut self) -> usize {
         let src_addr = self.dma_src & 0xFFF0;
         let dst_addr = 0x8000 + (self.dma_dst & 0x1FF0);
-        println!("hdma");
 
-        for i in 0..16 {
+        for i in 0..0x10 {
             let value = self.get_byte(src_addr + self.hdma_ptr + i);
             self.set_byte(dst_addr + self.hdma_ptr + i, value);
         }
@@ -108,7 +102,7 @@ impl Mmu {
             self.dma = DmaType::NoDma;
         }
 
-        4 * 16
+        8
     }
 
     pub fn apu_tick(&mut self, cycles: usize) {
@@ -158,12 +152,6 @@ impl Mmu {
                 0xFF01 => self.serial_out,
                 0xFF04..=0xFF07 => self.timer.get_byte(addr),
                 0xFF0F => {
-                    // println!(
-                    //     "{:#X} {:#X} {:#X}",
-                    //     self.timer.request_timer_int as u8,
-                    //     self.gpu.request_lcd_int as u8,
-                    //     self.gpu.request_vblank_int as u8
-                    // );
                     0x0 | (self.timer.request_timer_int as u8) << 2
                         | (self.gpu.request_lcd_int as u8) << 1
                         | (self.gpu.request_vblank_int as u8)
@@ -182,8 +170,12 @@ impl Mmu {
                 0xFF4F => self.gpu.get_byte(addr),
                 0xFF55 => match self.dma {
                     DmaType::GPDma => 0xFF,
-                    DmaType::HBlankDma => 0xFF,
-                    _ => 0xFF,
+                    DmaType::HBlankDma => {
+                        let transfer_len = (self.transfer_length / 0x10 - 0x1) as u8;
+                        let completed = self.hdma_ptr as u8 / 0x10 - 0x1;
+                        transfer_len.saturating_sub(completed) & 0x7F
+                    }
+                    DmaType::NoDma => 0xFF,
                 },
                 0xFF68..=0xFF6B => self.gpu.get_byte(addr),
                 0xFF70 => self.wram.get_byte(addr),
@@ -238,7 +230,10 @@ impl Mmu {
             0xFF46 => self.launch_dma_transfer(value),
             0xFF47..=0xFF4B => self.gpu.set_byte(addr, value),
             0xFF4C..=0xFF4E => match addr {
-                0xFF4D => self.cgb_mode.prepare_speed_switch = value & 0x1,
+                0xFF4D => {
+                    println!("Speed switch requested");
+                    self.cgb_mode.prepare_speed_switch = value & 0x1;
+                }
                 _ => println!("Write to io ports {:#X}", addr),
             },
             0xFF4F => self.gpu.set_byte(addr, value),

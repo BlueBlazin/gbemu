@@ -33,8 +33,8 @@ impl CgbMode {
 impl From<&CgbMode> for u8 {
     fn from(value: &CgbMode) -> Self {
         match value.speed {
-            CgbSpeed::Normal => value.prepare_speed_switch,
-            CgbSpeed::Double => 0x1 << 7 | value.prepare_speed_switch,
+            CgbSpeed::Normal => 0x0,
+            CgbSpeed::Double => (0x1 << 7) | value.prepare_speed_switch,
         }
     }
 }
@@ -142,12 +142,18 @@ impl Cpu {
     }
 
     pub fn frame(&mut self) {
-        let max_cycles = match self.mmu.cgb_mode.speed {
-            CgbSpeed::Normal => MAX_CYCLES,
-            CgbSpeed::Double => MAX_CYCLES * 2,
-        };
+        // let max_cycles = match self.mmu.cgb_mode.speed {
+        //     CgbSpeed::Normal => MAX_CYCLES,
+        //     CgbSpeed::Double => MAX_CYCLES * 2,
+        // };
+
         let mut cycles = 0;
-        while cycles < max_cycles {
+        // while cycles < MAX_CYCLES {
+        //     cycles += self.tick();
+        // }
+        // 70224
+        self.mmu.gpu.new_vblank = false;
+        while !self.mmu.gpu.new_vblank {
             cycles += self.tick();
         }
     }
@@ -156,13 +162,13 @@ impl Cpu {
         self.cycles = 0;
 
         if self.halted {
-            self.cycles += 4;
+            self.add_cycles(4);
             self.service_interrupts();
         } else if self.stopped {
-            self.cycles += 4;
+            self.add_cycles(4);
             if (self.memory_get(0xFF00) & 0xF) != 0 {
                 self.stopped = false;
-                self.cycles += 4;
+                self.add_cycles(4);
             }
         } else {
             match self.mmu.dma {
@@ -176,17 +182,17 @@ impl Cpu {
         }
 
         // Step Timers
+        // let timer_cycles = match self.mmu.cgb_mode.speed {
+        //     CgbSpeed::Normal => self.cycles,
+        //     CgbSpeed::Double => self.cycles * 2,
+        // };
         self.mmu.timer_tick(self.cycles);
 
-        let speed_aware_cycles = match self.mmu.cgb_mode.speed {
-            CgbSpeed::Normal => self.cycles,
-            CgbSpeed::Double => self.cycles / 2,
-        };
         // Step GPU
-        self.mmu.gpu_tick(speed_aware_cycles);
+        self.mmu.gpu_tick(self.cycles);
 
         // Step APU
-        self.mmu.apu_tick(speed_aware_cycles);
+        self.mmu.apu_tick(self.cycles);
 
         self.cycles
     }
@@ -197,13 +203,11 @@ impl Cpu {
     }
 
     fn gdma_tick(&mut self) {
-        let cycles = self.mmu.gdma_tick();
-        self.cycles += cycles;
+        self.cycles += self.mmu.gdma_tick();
     }
 
     fn hdma_tick(&mut self) {
-        let cycles = self.mmu.hdma_tick();
-        self.cycles += cycles;
+        self.cycles += self.mmu.hdma_tick();
     }
 
     fn service_interrupts(&mut self) {
@@ -313,7 +317,7 @@ impl Cpu {
     }
 
     pub fn ret_cc(&mut self, flag: Flag, set: bool) {
-        self.cycles += 4;
+        self.add_cycles(4);
         if self.get_flag(flag) == set as u8 {
             self.ret();
         }
@@ -354,7 +358,7 @@ impl Cpu {
 
     #[inline]
     pub fn jp_addr(&mut self, addr: u16) {
-        self.cycles += 4;
+        self.add_cycles(4);
         self.pc = addr;
     }
 
@@ -738,7 +742,7 @@ impl Cpu {
         self.setc_flag(Flag::H, (value & 0xF) + (n & 0xF) > 0xF);
         self.setc_flag(Flag::C, (value & 0xFF) + (n & 0xFF) > 0xFF);
         self.set_r16(R16::SP, res);
-        self.cycles += 4;
+        self.add_cycles(4);
     }
 
     pub fn add_sp_imm_hl(&mut self) {
@@ -980,7 +984,7 @@ impl Cpu {
     }
 
     pub fn push_r16(&mut self, r: R16) {
-        self.cycles += 4;
+        self.add_cycles(4);
         match r {
             R16::AF => {
                 let ms = self.get_r8(&R8::A) as u8;
@@ -1133,7 +1137,7 @@ impl Cpu {
     fn add_cycles(&mut self, cycles: usize) {
         self.cycles += match self.mmu.cgb_mode.speed {
             CgbSpeed::Normal => cycles,
-            CgbSpeed::Double => cycles * 2,
+            CgbSpeed::Double => cycles,
         };
     }
 
@@ -1183,7 +1187,7 @@ impl Cpu {
 
     /// Sets values of combined 16bit register.
     pub fn set_r16(&mut self, r: R16, value: u16) {
-        self.cycles += 4;
+        self.add_cycles(4);
         let ms = ((0xFF00 & value) >> 8) as u8;
         let ls = (0x00FF & value) as u8;
         match r {
@@ -1238,13 +1242,13 @@ impl Cpu {
 
     #[inline]
     pub fn memory_set(&mut self, addr: u16, value: u8) {
-        self.cycles += 4;
+        self.add_cycles(4);
         self.mmu.set_byte(addr, value);
     }
 
     #[inline]
     pub fn memory_get(&mut self, addr: u16) -> u8 {
-        self.cycles += 4;
+        self.add_cycles(4);
         self.mmu.get_byte(addr)
     }
 }
@@ -1463,8 +1467,13 @@ mod tests {
 
     #[test]
     fn test_blargg() {
-        let rom = fs::read("roms/Pokemon - Crystal Version (USA, Europe) (Rev A).gbc").unwrap();
+        // let rom = fs::read("roms/Pokemon - Crystal Version (USA, Europe) (Rev A).gbc").unwrap();
         // let rom = fs::read("roms/Pokemon - Silver Version (UE) [C][!].gbc").unwrap();
+        // let rom = fs::read("roms/Pokemon Red (UE) [S][!].gb").unwrap();
+        let rom = fs::read(
+            "roms/Legend of Zelda, The - Link's Awakening DX (USA, Europe) (SGB Enhanced).gbc",
+        )
+        .unwrap();
         // let rom = fs::read("roms/02-interrupts.gb").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
@@ -1477,12 +1486,53 @@ mod tests {
             //     cpu.halted
             // );
             cpu.tick();
-            // if flag {
-            //     cpu.keydown(7);
-            // } else {
-            //     cpu.keyup(7);
-            // }
+            if flag {
+                cpu.keydown(7);
+            } else {
+                cpu.keyup(7);
+            }
             flag = !flag;
         }
+    }
+
+    fn update(cpu: &mut Cpu) -> usize {
+        let mut frames = 0;
+        loop {
+            // self.update_frame();
+            cpu.frame();
+            frames += 1;
+            if let (Some(_), Some(_)) = cpu.mmu.apu.get_next_buffer() {
+                break;
+            }
+        }
+        frames
+    }
+
+    #[test]
+    fn test_frames() {
+        // let rom = fs::read(
+        //     "roms/Legend of Zelda, The - Link's Awakening DX (USA, Europe) (SGB Enhanced).gbc",
+        // )
+        let rom = fs::read("roms/Tetris.gb").unwrap();
+        // let rom = fs::read("roms/02-interrupts.gb").unwrap();
+        let mut cpu = Cpu::new(rom);
+        cpu.simulate_bootrom();
+        for _ in 0..50 {
+            update(&mut cpu);
+        }
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
+        println!("frames: {}", update(&mut cpu));
     }
 }
