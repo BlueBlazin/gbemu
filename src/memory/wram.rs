@@ -1,6 +1,5 @@
 const WRAM_BANK_SIZE: usize = 0x1000;
 const WRAM_OFFSET: usize = 0xC000;
-// const WRAM_SIZE: usize = 0x8000;
 
 pub struct Wram {
     wram: Vec<u8>,
@@ -31,7 +30,6 @@ impl Wram {
         match addr {
             0xC000..=0xCFFF => self.wram[addr as usize - WRAM_OFFSET] = value,
             0xD000..=0xDFFF => {
-                let old_addr = addr;
                 let addr = self.bank * WRAM_BANK_SIZE + (addr as usize - 0xD000);
                 self.wram[addr] = value;
             }

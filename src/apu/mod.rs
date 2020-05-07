@@ -180,8 +180,4 @@ impl Apu {
     pub fn get_next_buffer(&mut self) -> (Option<Vec<f32>>, Option<Vec<f32>>) {
         self.samples.dequeue()
     }
-
-    pub fn queue_len(&self) -> usize {
-        self.samples.queue_len()
-    }
 }

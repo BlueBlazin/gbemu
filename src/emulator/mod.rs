@@ -33,30 +33,7 @@ impl Emulator {
     }
 
     pub fn update(&mut self) {
-        // let mut cycles = 0;
-        // while cycles < MAX_CYCLES {
-        //     cycles += self.cpu.tick();
-        // }
-        // self.play_audio();
-        self.update_with_audio();
-    }
-
-    // pub fn mock_update(&mut self) -> usize {
-    //     let mut frames = 0;
-    //     loop {
-    //         // self.update_frame();
-    //         self.cpu.frame();
-    //         frames += 1;
-    //         if let (Some(left), Some(right)) = self.cpu.mmu.apu.get_next_buffer() {
-    //             break;
-    //         }
-    //     }
-    //     frames
-    // }
-
-    pub fn update_with_audio(&mut self) {
         loop {
-            // self.update_frame();
             self.cpu.frame();
             if let (Some(left), Some(right)) = self.cpu.mmu.apu.get_next_buffer() {
                 self.play_audio_sample(left, right);
@@ -64,13 +41,6 @@ impl Emulator {
             }
         }
     }
-
-    // fn update_frame(&mut self) {
-    //     let mut cycles = 0;
-    //     while cycles < MAX_CYCLES {
-    //         cycles += self.cpu.tick();
-    //     }
-    // }
 
     fn play_audio_sample(&mut self, mut left: Vec<f32>, mut right: Vec<f32>) {
         let start_time = match self.next_start_time {
@@ -95,32 +65,6 @@ impl Emulator {
             .unwrap();
 
         self.next_start_time = Some(start_time + SAMPLE_DURATION);
-    }
-
-    #[allow(unused_variables)]
-    fn play_audio(&mut self) {
-        let start_time = match self.next_start_time {
-            None => self.ctx.current_time() + LATENCY,
-            Some(t) => t,
-        };
-
-        if let (Some(mut ql), Some(mut qr)) = self.cpu.mmu.apu.get_next_buffer() {
-            let buffer = self
-                .ctx
-                .create_buffer(NUM_AUDIO_CHANNELS, BUFFER_SIZE as u32, AUDIO_SAMPLE_RATE)
-                .unwrap();
-            buffer
-                .copy_to_channel_with_start_in_channel(&mut ql, 0, 0)
-                .unwrap();
-
-            let source = self.ctx.create_buffer_source().unwrap();
-            source.set_buffer(Some(&buffer));
-            source.start_with_when(start_time).unwrap();
-            source
-                .connect_with_audio_node(&self.ctx.destination())
-                .unwrap();
-            self.next_start_time = Some(start_time + SAMPLE_DURATION);
-        }
     }
 
     pub fn screen(&self) -> *const u8 {

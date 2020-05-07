@@ -577,64 +577,18 @@ impl Gpu {
         let b = b as u32;
 
         // MatCurrie
-        (
-            ((r << 3) | (r >> 2)) as u8,
-            ((g << 3) | (g >> 2)) as u8,
-            ((b << 3) | (b >> 2)) as u8,
-        )
+        // (
+        //     ((r << 3) | (r >> 2)) as u8,
+        //     ((g << 3) | (g >> 2)) as u8,
+        //     ((b << 3) | (b >> 2)) as u8,
+        // )
 
         // Gambatte
-        // (
-        //     ((r * 13 + g * 2 + b) >> 1) as u8,
-        //     ((g * 3 + b) << 1) as u8,
-        //     ((r * 3 + g * 2 + b * 11) >> 1) as u8,
-        // )
-
-        // byuu formula
-        // let rc = r * 26 + g * 4 + b * 2;
-        // let gc = g * 24 + b * 8;
-        // let bc = r * 6 + g * 4 + b * 22;
-        // (
-        //     (min!(960, rc) >> 2) as u8,
-        //     (min!(960, gc) >> 2) as u8,
-        //     (min!(960, bc) >> 2) as u8,
-        // )
-
-        // SameBoy color curves
-        // (
-        //     COLOR_CORRECT_CURVES[r as usize],
-        //     COLOR_CORRECT_CURVES[g as usize],
-        //     COLOR_CORRECT_CURVES[b as usize],
-        // )
-
-        // // SameBoy correction
-        // let r = COLOR_CORRECT_CURVES[r as usize];
-        // let g = COLOR_CORRECT_CURVES[g as usize];
-        // let b = COLOR_CORRECT_CURVES[b as usize];
-
-        // let mut new_r = r;
-        // let mut new_g = (g * 3 + b) / 4;
-        // let mut new_b = b;
-
-        // let old_max = max!(r, max!(g, b));
-        // let new_max = max!(new_r, max!(new_g, new_b));
-
-        // if new_max != 0 {
-        //     new_r = new_r * old_max / new_max;
-        //     new_g = new_g * old_max / new_max;
-        //     new_b = new_b * old_max / new_max;
-        // }
-
-        // let old_min = min!(r, min!(g, b));
-        // let new_min = min!(r, min!(g, b));
-
-        // if new_min != 0xFF {
-        //     new_r = 0xFF - (0xFF - new_r) * (0xFF - old_min) / (0xFF - new_min);
-        //     new_g = 0xFF - (0xFF - new_g) * (0xFF - old_min) / (0xFF - new_min);
-        //     new_b = 0xFF - (0xFF - new_b) * (0xFF - old_min) / (0xFF - new_min);
-        // }
-
-        // (new_r as u8, new_g as u8, new_b as u8)
+        (
+            ((r * 13 + g * 2 + b) >> 1) as u8,
+            ((g * 3 + b) << 1) as u8,
+            ((r * 3 + g * 2 + b * 11) >> 1) as u8,
+        )
     }
 
     pub fn tick(&mut self, cycles: usize) {
