@@ -248,7 +248,6 @@ pub struct Gpu {
     clock: usize,
     pub request_vblank_int: bool,
     pub request_lcd_int: bool,
-    pub gdma_active: bool,
     vram_bank: usize,
     win_counter: usize,
 }
@@ -278,7 +277,6 @@ impl Gpu {
             clock: 0,
             request_vblank_int: false,
             request_lcd_int: false,
-            gdma_active: false,
             vram_bank: 0,
             win_counter: 0,
         }
@@ -636,7 +634,14 @@ impl Gpu {
                     self.position.ly += 1;
                     self.check_coincidence();
 
-                    if self.position.ly > 153 {
+                    // STRANGE BEHAVIOR: At line 153, V-Blank has already reached
+                    // the top of the screen and is to be treated like line 0.
+                    if self.position.ly == 153 {
+                        self.position.ly = 0;
+                        self.check_coincidence();
+                    }
+
+                    if self.position.ly == 1 {
                         self.position.ly = 0;
                         self.win_counter = 0;
                         self.change_mode(GpuMode::OamSearch);
@@ -678,7 +683,7 @@ impl Gpu {
     pub fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
             0x8000..=0x9FFF => match self.stat.mode {
-                GpuMode::PixelTransfer if self.lcdc.display_enabled() && !self.gdma_active => (),
+                GpuMode::PixelTransfer if self.lcdc.display_enabled() => (),
                 _ => self.set_vram_byte(addr, value, self.vram_bank),
             },
             0xFE00..=0xFE9F => match self.stat.mode {

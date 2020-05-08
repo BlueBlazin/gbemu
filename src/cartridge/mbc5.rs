@@ -56,7 +56,7 @@ impl Mbc for Mbc5 {
     fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
             0x0000..=0x1FFF => {
-                self.ram_enabled = (value & 0x0A) != 0;
+                self.ram_enabled = (value & 0xA) != 0;
             }
             0x2000..=0x2FFF => {
                 self.rom_bank = (self.rom_bank & 0x100) | value as u16;
@@ -64,10 +64,9 @@ impl Mbc for Mbc5 {
             0x3000..=0x3FFF => {
                 self.rom_bank = (self.rom_bank & 0xFF) | ((value as u16 & 0x1) << 8);
             }
-            0x4000..=0x5FFF => match value {
-                0x00..=0x0F => self.ram_bank = value,
-                _ => (),
-            },
+            0x4000..=0x5FFF => {
+                self.ram_bank = value & 0x0F;
+            }
             0x6000..=0x7FFF => (),
             0xA000..=0xBFFF => {
                 if self.ram_enabled {

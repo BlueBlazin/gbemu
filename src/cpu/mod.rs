@@ -154,32 +154,60 @@ impl Cpu {
         if self.halted {
             self.add_cycles(4);
             self.service_interrupts();
-        } else if self.stopped {
-            self.add_cycles(4);
-            if (self.memory_get(0xFF00) & 0xF) != 0 {
-                self.stopped = false;
-                self.add_cycles(4);
-            }
-        } else {
-            match self.mmu.dma {
-                DmaType::GPDma => self.gdma_tick(),
-                DmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
-                _ => {
-                    self.cpu_tick();
-                    self.service_interrupts();
-                }
-            }
+            return self.cycles;
         }
 
+        if self.stopped {
+            self.add_cycles(4);
+            if (self.mmu.get_byte(0xFF00) & 0xF) != 0xF {
+                self.leave_stop_mode();
+                self.add_cycles(8);
+            }
+            return self.cycles;
+        }
+
+        match self.mmu.dma {
+            DmaType::GPDma => self.gdma_tick(),
+            DmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
+            _ => self.cpu_tick(),
+        }
         self.cycles
     }
+
+    // pub fn tick(&mut self) -> usize {
+    //     self.cycles = 0;
+
+    //     if self.halted {
+    //         self.add_cycles(4);
+    //         self.service_interrupts();
+    //     } else if self.stopped {
+    //         self.add_cycles(4);
+    //         if (self.mmu.get_byte(0xFF00) & 0xF) != 0xF {
+    //             self.leave_stop_mode();
+    //             self.add_cycles(8);
+    //         }
+    //     } else {
+    //         match self.mmu.dma {
+    //             DmaType::GPDma => self.gdma_tick(),
+    //             DmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
+    //             _ => {
+    //                 self.cpu_tick();
+    //                 self.service_interrupts();
+    //             }
+    //         }
+    //     }
+
+    //     self.cycles
+    // }
 
     fn cpu_tick(&mut self) {
         let opcode = self.fetch();
         self.decode_exec(opcode);
+        self.service_interrupts();
     }
 
     fn gdma_tick(&mut self) {
+        self.cycles += 4;
         let cycles = self.mmu.gdma_tick();
         self.add_cycles(match self.mmu.cgb_mode.speed {
             CgbSpeed::Normal => cycles,
@@ -188,6 +216,10 @@ impl Cpu {
     }
 
     fn hdma_tick(&mut self) {
+        if self.mmu.new_hdma {
+            self.mmu.new_hdma = false;
+            self.cycles += 4;
+        }
         let cycles = self.mmu.hdma_tick();
         self.add_cycles(match self.mmu.cgb_mode.speed {
             CgbSpeed::Normal => cycles,
@@ -225,6 +257,13 @@ impl Cpu {
                 // 3 - Serial Interrupt
                 // 4 - Joypad Interupt
             }
+        }
+    }
+
+    fn leave_stop_mode(&mut self) {
+        self.stopped = false;
+        for _ in 0..0x200 {
+            self.add_cycles(0x10);
         }
     }
 
@@ -628,6 +667,8 @@ impl Cpu {
                 CgbSpeed::Double => CgbSpeed::Normal,
             };
             self.mmu.cgb_mode.prepare_speed_switch = 0x0;
+            self.stopped = true;
+            self.leave_stop_mode();
         } else {
             self.stopped = true;
         }
@@ -1462,8 +1503,11 @@ mod tests {
 
     #[test]
     fn test_blargg() {
-        let rom = fs::read("roms/Pokemon - Crystal Version (USA, Europe) (Rev A).gbc").unwrap();
-        // let rom = fs::read("roms/Shantae (USA).gbc").unwrap();
+        // let rom = fs::read("roms/Pokemon - Crystal Version (USA, Europe) (Rev A).gbc").unwrap();
+        let rom = fs::read("roms/Shantae (USA).gbc").unwrap();
+        // let rom =
+        //     fs::read("roms/Alone in the Dark - The New Nightmare (Europe) (En,Fr,De,Es,It,Nl).gbc")
+        //         .unwrap();
         // let rom = fs::read("roms/Legend of Zelda, The - Oracle of Ages (U) [C][!].gbc").unwrap();
         // let rom = fs::read("roms/Pokemon - Silver Version (UE) [C][!].gbc").unwrap();
         // let rom = fs::read("roms/Pokemon Red (UE) [S][!].gb").unwrap();
@@ -1478,20 +1522,29 @@ mod tests {
         cpu.simulate_bootrom();
         let mut flag = true;
         let mut cycles = 0.0;
+        let mut i = 0;
         loop {
             // println!(
-            //     "{:#X} {:#X} halted: {}",
+            //     "pc: {:#X}, opcode: {:#X}, halted: {}",
             //     cpu.pc,
             //     cpu.mmu.get_byte(cpu.pc),
             //     cpu.halted
             // );
             cycles += cpu.tick() as f64;
             // println!("{}", cycles / 4.0);
-            if flag {
-                cpu.keydown(7);
-            } else {
-                cpu.keyup(7);
-            }
+            // if flag {
+            //     if i < 50_000_000 {
+            //         cpu.keydown(4);
+            //     } else {
+            //         cpu.keydown(6);
+            //     }
+            // } else {
+            //     if i < 50_000_000 {
+            //         cpu.keyup(4);
+            //     } else {
+            //         cpu.keyup(6);
+            //     }
+            // }
             flag = !flag;
         }
     }
@@ -1499,7 +1552,6 @@ mod tests {
     fn update(cpu: &mut Cpu) -> usize {
         let mut frames = 0;
         loop {
-            // self.update_frame();
             cpu.frame();
             frames += 1;
             if let (Some(_), Some(_)) = cpu.mmu.apu.get_next_buffer() {
@@ -1511,29 +1563,19 @@ mod tests {
 
     #[test]
     fn test_frames() {
-        // let rom = fs::read(
-        //     "roms/Legend of Zelda, The - Link's Awakening DX (USA, Europe) (SGB Enhanced).gbc",
-        // )
-        let rom = fs::read("roms/Tetris.gb").unwrap();
-        // let rom = fs::read("roms/02-interrupts.gb").unwrap();
+        let rom = fs::read("roms/Shantae (USA).gbc").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
-        for _ in 0..50 {
-            update(&mut cpu);
+        for _ in 0..10000 {
+            println!(
+                "pc: {:#X} halted: {}, stopped {}",
+                cpu.pc, cpu.halted, cpu.stopped
+            );
+            cpu.tick();
         }
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
-        println!("frames: {}", update(&mut cpu));
+        println!(
+            "pc: {:#X} halted: {}, stopped {}",
+            cpu.pc, cpu.halted, cpu.stopped
+        );
     }
 }
