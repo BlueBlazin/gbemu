@@ -50,7 +50,7 @@ impl Mbc for Mbc1 {
             }
             0xA000..=0xBFFF => {
                 if !self.ram_enabled {
-                    return 0xFF;
+                    return 0x00;
                 }
                 let addr = self.ram_bank as usize * RAM_BANK_SIZE + (addr as usize - RAM_OFFSET);
                 self.ram[addr]

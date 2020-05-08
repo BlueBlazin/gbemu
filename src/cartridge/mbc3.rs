@@ -105,7 +105,7 @@ impl Mbc3 {
 
         Mbc3 {
             rom: data,
-            ram: vec![0; ram_size],
+            ram: vec![0xFF; ram_size],
             rom_bank: 1,
             ram_bank: 0,
             ram_or_rtc_enabled: false,

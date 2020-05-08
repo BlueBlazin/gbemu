@@ -26,8 +26,8 @@ impl Mbc5 {
 
         Mbc5 {
             rom: data,
-            ram: vec![0; ram_size],
-            rom_bank: 0,
+            ram: vec![0xFF; ram_size],
+            rom_bank: 1,
             ram_bank: 0,
             ram_enabled: false,
         }
@@ -62,11 +62,12 @@ impl Mbc for Mbc5 {
                 self.rom_bank = (self.rom_bank & 0x100) | value as u16;
             }
             0x3000..=0x3FFF => {
-                self.rom_bank = (self.rom_bank & 0xFF) | (value as u16 & 0x1);
+                self.rom_bank = (self.rom_bank & 0xFF) | ((value as u16 & 0x1) << 8);
             }
-            0x4000..=0x5FFF => {
-                self.ram_bank = value & 0x0F;
-            }
+            0x4000..=0x5FFF => match value {
+                0x00..=0x0F => self.ram_bank = value,
+                _ => (),
+            },
             0x6000..=0x7FFF => (),
             0xA000..=0xBFFF => {
                 if self.ram_enabled {

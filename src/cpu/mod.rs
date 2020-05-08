@@ -171,20 +171,6 @@ impl Cpu {
             }
         }
 
-        // // Step Timers
-        // self.mmu.timer_tick(self.cycles);
-
-        // let speed_aware_cycles = match self.mmu.cgb_mode.speed {
-        //     CgbSpeed::Normal => self.cycles,
-        //     CgbSpeed::Double => self.cycles * 2,
-        // };
-
-        // // Step GPU
-        // self.mmu.gpu_tick(speed_aware_cycles);
-
-        // // Step APU
-        // self.mmu.apu_tick(speed_aware_cycles);
-
         self.cycles
     }
 
@@ -1477,17 +1463,21 @@ mod tests {
     #[test]
     fn test_blargg() {
         let rom = fs::read("roms/Pokemon - Crystal Version (USA, Europe) (Rev A).gbc").unwrap();
-        // let rom = fs::read("roms/Aladdin (USA).gbc").unwrap();
+        // let rom = fs::read("roms/Shantae (USA).gbc").unwrap();
+        // let rom = fs::read("roms/Legend of Zelda, The - Oracle of Ages (U) [C][!].gbc").unwrap();
         // let rom = fs::read("roms/Pokemon - Silver Version (UE) [C][!].gbc").unwrap();
         // let rom = fs::read("roms/Pokemon Red (UE) [S][!].gb").unwrap();
         // let rom = fs::read(
         //     "roms/Legend of Zelda, The - Link's Awakening DX (USA, Europe) (SGB Enhanced).gbc",
         // )
         // .unwrap();
+
+        // .unwrap();
         // let rom = fs::read("roms/02-interrupts.gb").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         let mut flag = true;
+        let mut cycles = 0.0;
         loop {
             // println!(
             //     "{:#X} {:#X} halted: {}",
@@ -1495,7 +1485,8 @@ mod tests {
             //     cpu.mmu.get_byte(cpu.pc),
             //     cpu.halted
             // );
-            cpu.tick();
+            cycles += cpu.tick() as f64;
+            // println!("{}", cycles / 4.0);
             if flag {
                 cpu.keydown(7);
             } else {

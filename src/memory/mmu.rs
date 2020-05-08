@@ -70,8 +70,8 @@ impl Mmu {
     }
 
     pub fn gdma_tick(&mut self) -> usize {
-        let src_addr = self.dma_src & 0xFFF0;
-        let dst_addr = 0x8000 + (self.dma_dst & 0x1FF0);
+        let src_addr = self.dma_src;
+        let dst_addr = 0x8000 | (self.dma_dst & 0x1FF0);
 
         self.gpu.gdma_active = true;
 
@@ -87,11 +87,18 @@ impl Mmu {
     }
 
     pub fn hdma_tick(&mut self) -> usize {
-        let src_addr = self.dma_src & 0xFFF0;
-        let dst_addr = 0x8000 + (self.dma_dst & 0x1FF0);
+        let src_addr = self.dma_src;
+        let dst_addr = 0x8000 | (self.dma_dst & 0x1FF0);
 
         for i in 0..0x10 {
             let value = self.get_byte(src_addr + self.hdma_ptr + i);
+            println!(
+                "{:#X},{:#X},{:#X},{}",
+                dst_addr + self.hdma_ptr + i,
+                src_addr,
+                dst_addr,
+                i
+            );
             self.set_byte(dst_addr + self.hdma_ptr + i, value);
         }
 
@@ -245,9 +252,9 @@ impl Mmu {
                 }
             }
             0xFF51..=0xFF7F => match addr {
-                0xFF51 => self.dma_src = (self.dma_src & 0x00FF) | ((value as u16) << 8),
+                0xFF51 => self.dma_src = (self.dma_src & 0x00F0) | ((value as u16) << 8),
                 0xFF52 => self.dma_src = (self.dma_src & 0xFF00) | value as u16,
-                0xFF53 => self.dma_dst = (self.dma_dst & 0x00FF) | ((value as u16) << 8),
+                0xFF53 => self.dma_dst = (self.dma_dst & 0x00F0) | ((value as u16) << 8),
                 0xFF54 => self.dma_dst = (self.dma_dst & 0xFF00) | value as u16,
                 0xFF55 => {
                     self.dma = match value & 0x80 {
