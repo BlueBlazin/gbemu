@@ -1,4 +1,10 @@
+pub mod registers;
+pub mod tiles;
+
 use crate::cpu::EmulationMode;
+use crate::gpu::registers::{ColorPalette, LcdControl, LcdPosition, LcdStatus, MonochromePalette};
+use crate::gpu::tiles::{BgAttr, Sprite};
+use std::mem;
 
 const VRAM_BANK_SIZE: usize = 0x2000;
 const OAM_SIZE: usize = 0xA0;
@@ -34,55 +40,6 @@ impl From<&GpuMode> for u8 {
     }
 }
 
-struct Sprite {
-    pub y: i32,
-    pub x: i32,
-    pub number: u16,
-    pub has_priority: bool,
-    pub mirror_vertical: bool,
-    pub mirror_horizontal: bool,
-    pub obp1: bool,
-    pub vram_bank: usize,
-    pub obp_num: usize,
-}
-
-impl From<&[u8]> for Sprite {
-    fn from(bytes: &[u8]) -> Sprite {
-        Sprite {
-            y: bytes[0] as u16 as i32 - 16,
-            x: bytes[1] as u16 as i32 - 8,
-            number: bytes[2] as u16,
-            has_priority: (bytes[3] & 0x80) == 0,
-            mirror_vertical: (bytes[3] & 0x40) != 0,
-            mirror_horizontal: (bytes[3] & 0x20) != 0,
-            obp1: (bytes[3] & 0x10) != 0,
-            vram_bank: ((bytes[3] & 0x08) >> 3) as usize,
-            obp_num: (bytes[3] & 0x07) as usize,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct BgAttr {
-    bgp_num: usize,
-    vram_bank: usize,
-    mirror_horizontal: bool,
-    mirror_vertical: bool,
-    has_priority: bool,
-}
-
-impl From<u8> for BgAttr {
-    fn from(value: u8) -> Self {
-        Self {
-            bgp_num: (value & 0x07) as usize,
-            vram_bank: if (value & 0x08) == 0 { 0 } else { 1 },
-            mirror_horizontal: (value & 0x20) != 0,
-            mirror_vertical: (value & 0x40) != 0,
-            has_priority: (value & 0x80) != 0,
-        }
-    }
-}
-
 #[derive(PartialEq)]
 enum PixelType {
     BgColor0,
@@ -90,153 +47,15 @@ enum PixelType {
     BgPriorityOverride,
 }
 
-// Bit 7 - LCD Display Enable             (0=Off, 1=On)
-// Bit 6 - Window Tile Map Display Select (0=9800-9BFF, 1=9C00-9FFF)
-// Bit 5 - Window Display Enable          (0=Off, 1=On)
-// Bit 4 - BG & Window Tile Data Select   (0=8800-97FF, 1=8000-8FFF)
-// Bit 3 - BG Tile Map Display Select     (0=9800-9BFF, 1=9C00-9FFF)
-// Bit 2 - OBJ (Sprite) Size              (0=8x8, 1=8x16)
-// Bit 1 - OBJ (Sprite) Display Enable    (0=Off, 1=On)
-// Bit 0 - BG/Window Display/Priority     (0=Off, 1=On)
-#[derive(Default)]
-struct LcdControl {
-    pub display_enable: u8,
-    pub win_tilemap_sel: u8,
-    pub win_display_enable: u8,
-    pub bg_tiledata_sel: u8,
-    pub bg_tilemap_sel: u8,
-    pub obj_size: u8,
-    pub obj_display_enable: u8,
-    pub lcdc0: u8,
-}
-
-impl LcdControl {
-    pub fn display_enabled(&self) -> bool {
-        self.display_enable != 0
-    }
-
-    pub fn win_tilemap(&self) -> u16 {
-        if self.win_tilemap_sel == 0 {
-            0x9800
-        } else {
-            0x9C00
-        }
-    }
-
-    pub fn bg_tilemap(&self) -> u16 {
-        if self.bg_tilemap_sel == 0 {
-            0x9800
-        } else {
-            0x9C00
-        }
-    }
-
-    pub fn window_enabled(&self, mode: &EmulationMode) -> bool {
-        match mode {
-            EmulationMode::Dmg => self.lcdc0 != 0 && self.win_display_enable != 0,
-            EmulationMode::Cgb => self.win_display_enable != 0,
-        }
-    }
-
-    pub fn obj_enabled(&self) -> bool {
-        self.obj_display_enable != 0
-    }
-}
-
-impl From<&LcdControl> for u8 {
-    fn from(lcdc: &LcdControl) -> u8 {
-        0x0 | lcdc.display_enable
-            | lcdc.win_tilemap_sel
-            | lcdc.win_display_enable
-            | lcdc.bg_tiledata_sel
-            | lcdc.bg_tilemap_sel
-            | lcdc.obj_size
-            | lcdc.obj_display_enable
-            | lcdc.lcdc0
-    }
-}
-
-// Bit 6 - LYC=LY Coincidence Interrupt (1=Enable) (Read/Write)
-// Bit 5 - Mode 2 OAM Interrupt         (1=Enable) (Read/Write)
-// Bit 4 - Mode 1 V-Blank Interrupt     (1=Enable) (Read/Write)
-// Bit 3 - Mode 0 H-Blank Interrupt     (1=Enable) (Read/Write)
-// Bit 2 - Coincidence Flag  (0:LYC<>LY, 1:LYC=LY) (Read Only)
-// Bit 1-0 - Mode Flag       (Mode 0-3, see below) (Read Only)
-struct LcdStatus {
-    pub lyc_int: u8,
-    pub oam_int: u8,
-    pub vblank_int: u8,
-    pub hblank_int: u8,
-    pub coincident: u8,
-    pub mode: GpuMode,
-}
-
-impl Default for LcdStatus {
-    fn default() -> Self {
-        Self {
-            lyc_int: 0,
-            oam_int: 0,
-            vblank_int: 0,
-            hblank_int: 0,
-            coincident: 0,
-            mode: GpuMode::OamSearch,
-        }
-    }
-}
-
-impl From<&LcdStatus> for u8 {
-    fn from(stat: &LcdStatus) -> u8 {
-        0x0 | stat.lyc_int
-            | stat.oam_int
-            | stat.vblank_int
-            | stat.hblank_int
-            | stat.coincident
-            | u8::from(&stat.mode)
-    }
-}
-
-#[derive(Default)]
-struct LcdPosition {
-    pub scroll_y: u8,
-    pub scroll_x: u8,
-    pub ly: u8,
-    pub lyc: u8,
-    pub window_y: u8,
-    pub window_x: u8,
-}
-
-#[derive(Default)]
-struct MonochromePalette {
-    pub bgp: u8,
-    pub obp0: u8,
-    pub obp1: u8,
-}
-
-#[derive(Default)]
-struct ColorPalette {
-    pub bgp_idx: u8,
-    pub bgp_auto_incr: bool,
-    pub obp_idx: u8,
-    pub obp_auto_incr: bool,
-}
-
-impl ColorPalette {
-    pub fn bgp(&self) -> u8 {
-        (self.bgp_auto_incr as u8) << 7 | (self.bgp_idx & 0x3F)
-    }
-
-    pub fn obp(&self) -> u8 {
-        (self.obp_auto_incr as u8) << 7 | (self.obp_idx & 0x3F)
-    }
-}
-
 pub struct Gpu {
+    /// This is what is displayed in the GUI
     pub screen: Vec<u8>,
+    /// This is what the ppu actually writes to
+    pub lcd: Vec<u8>,
     pub vram0: Vec<u8>,
     pub vram1: Vec<u8>,
     pub bgp_ram: Vec<u8>,
     pub obp_ram: Vec<u8>,
-    pub new_vblank: bool,
     cgbp: ColorPalette,
     emu_mode: EmulationMode,
     oam: Vec<u8>,
@@ -261,11 +80,11 @@ impl Gpu {
 
         Gpu {
             screen: vec![0; SCREEN_HEIGHT * SCREEN_WIDTH * SCREEN_DEPTH],
+            lcd: vec![0; SCREEN_HEIGHT * SCREEN_WIDTH * SCREEN_DEPTH],
             vram0: vec![0; VRAM_BANK_SIZE],
             vram1: vec![0; VRAM_BANK_SIZE],
             bgp_ram: vec![0; PALETTE_RAM_SIZE],
             obp_ram: vec![0; PALETTE_RAM_SIZE],
-            new_vblank: false,
             oam: vec![0; OAM_SIZE],
             cgbp: ColorPalette::default(),
             emu_mode,
@@ -294,10 +113,10 @@ impl Gpu {
         for i in 0..SCREEN_WIDTH {
             self.pixel_types[i] = PixelType::BgColor0;
             let ly = self.position.ly as usize;
-            self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 0] = 255;
-            self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 1] = 255;
-            self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 2] = 255;
-            self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 3] = 255;
+            self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 0] = 255;
+            self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 1] = 255;
+            self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 2] = 255;
+            self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 3] = 255;
         }
 
         self.draw_line_bg();
@@ -305,8 +124,8 @@ impl Gpu {
     }
 
     fn clear_screen(&mut self) {
-        for i in 0..self.screen.len() {
-            self.screen[i] = 255;
+        for i in 0..self.lcd.len() {
+            self.lcd[i] = 255;
         }
     }
 
@@ -351,9 +170,7 @@ impl Gpu {
     }
 
     fn put_win_pixel(&mut self, i: usize) {
-        // let (lx, ly) = (i as u8, self.position.ly);
         let lx = i as u8;
-        // let (wx, wy) = (self.position.window_x, self.position.window_y);
         let wx = self.position.window_x;
 
         // get idx of the coincident window tile
@@ -537,10 +354,10 @@ impl Gpu {
 
     fn update_screen_row(&mut self, x: usize, r: u8, g: u8, b: u8) {
         let ly = self.position.ly as usize;
-        self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 0] = r;
-        self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 1] = g;
-        self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 2] = b;
-        self.screen[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 3] = 255;
+        self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 0] = r;
+        self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 1] = g;
+        self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 2] = b;
+        self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 3] = 255;
     }
 
     fn get_rgb(&self, value: u8, palette: u8) -> (u8, u8, u8) {
@@ -666,10 +483,11 @@ impl Gpu {
             GpuMode::OamSearch if self.stat.oam_int != 0 => self.request_lcd_interrupt(),
             GpuMode::HBlank if self.stat.hblank_int != 0 => self.request_lcd_interrupt(),
             GpuMode::VBlank => {
-                self.new_vblank = true;
                 if self.stat.vblank_int != 0 {
                     self.request_lcd_interrupt();
                 }
+                // Screen should refresh on V-Blank.
+                mem::swap(&mut self.screen, &mut self.lcd);
             }
             _ => (),
         }

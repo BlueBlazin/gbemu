@@ -174,32 +174,6 @@ impl Cpu {
         self.cycles
     }
 
-    // pub fn tick(&mut self) -> usize {
-    //     self.cycles = 0;
-
-    //     if self.halted {
-    //         self.add_cycles(4);
-    //         self.service_interrupts();
-    //     } else if self.stopped {
-    //         self.add_cycles(4);
-    //         if (self.mmu.get_byte(0xFF00) & 0xF) != 0xF {
-    //             self.leave_stop_mode();
-    //             self.add_cycles(8);
-    //         }
-    //     } else {
-    //         match self.mmu.dma {
-    //             DmaType::GPDma => self.gdma_tick(),
-    //             DmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
-    //             _ => {
-    //                 self.cpu_tick();
-    //                 self.service_interrupts();
-    //             }
-    //         }
-    //     }
-
-    //     self.cycles
-    // }
-
     fn cpu_tick(&mut self) {
         let opcode = self.fetch();
         self.decode_exec(opcode);
@@ -278,8 +252,6 @@ impl Cpu {
             EmulationMode::Dmg => self.set_r16(R16::AF, 0x01B0),
             EmulationMode::Cgb => self.set_r16(R16::AF, 0x11B0),
         }
-        // self.set_r16(R16::AF, 0x01B0);
-        // self.set_r16(R16::AF, 0x11B0);
         self.set_r16(R16::BC, 0x0013);
         self.set_r16(R16::DE, 0x00D8);
         self.set_r16(R16::HL, 0x014D);
@@ -341,10 +313,10 @@ impl Cpu {
     }
 
     pub fn ret_cc(&mut self, flag: Flag, set: bool) {
-        self.add_cycles(4);
         if self.get_flag(flag) == set as u8 {
             self.ret();
         }
+        self.add_cycles(4);
     }
 
     pub fn reti(&mut self) {
@@ -382,8 +354,8 @@ impl Cpu {
 
     #[inline]
     pub fn jp_addr(&mut self, addr: u16) {
-        self.add_cycles(4);
         self.pc = addr;
+        self.add_cycles(4);
     }
 
     pub fn jp_nn(&mut self) {
@@ -1010,7 +982,6 @@ impl Cpu {
     }
 
     pub fn push_r16(&mut self, r: R16) {
-        self.add_cycles(4);
         match r {
             R16::AF => {
                 let ms = self.get_r8(&R8::A) as u8;
@@ -1038,6 +1009,7 @@ impl Cpu {
             }
             R16::SP => (),
         }
+        self.add_cycles(4);
     }
 
     pub fn get_flag(&self, flag: Flag) -> u8 {
@@ -1223,7 +1195,6 @@ impl Cpu {
 
     /// Sets values of combined 16bit register.
     pub fn set_r16(&mut self, r: R16, value: u16) {
-        self.add_cycles(4);
         let ms = ((0xFF00 & value) >> 8) as u8;
         let ls = (0x00FF & value) as u8;
         match r {
@@ -1247,6 +1218,7 @@ impl Cpu {
                 self.sp = value;
             }
         }
+        self.add_cycles(4);
     }
 
     pub fn set_r16_imm(&mut self, r: R16) {
@@ -1278,8 +1250,8 @@ impl Cpu {
 
     #[inline]
     pub fn memory_set(&mut self, addr: u16, value: u8) {
-        self.add_cycles(4);
         self.mmu.set_byte(addr, value);
+        self.add_cycles(4);
     }
 
     #[inline]

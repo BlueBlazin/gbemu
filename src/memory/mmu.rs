@@ -255,7 +255,7 @@ impl Mmu {
                 0xFF68..=0xFF6B => self.gpu.set_byte(addr, value),
                 0xFF70 => self.wram.set_byte(addr, value),
                 _ => (),
-            }, //println!("Write to io ports {:#X}", addr),
+            },
             // FF80-FFFE   High RAM (HRAM)
             0xFF80..=0xFFFE => self.hram[(addr - HRAM_OFFSET) as usize] = value,
             // FFFF        Interrupt Enable Register

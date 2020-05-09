@@ -231,7 +231,6 @@ impl SquareWave {
             0xFF11 | 0xFF16 => {
                 self.registers.nrx1 = value;
                 self.timer.duty = ((value & 0xC0) >> 6) as usize;
-                // self.length.counter = 64 - (value & 0x3F) as usize;
                 self.length.counter = (value & 0x3F) as usize;
             }
             0xFF12 | 0xFF17 => {
@@ -243,13 +242,9 @@ impl SquareWave {
             }
             0xFF13 | 0xFF18 => {
                 self.registers.nrx3 = value;
-                // self.sweep.shadow_freq = (self.sweep.shadow_freq & 0x700) | value as u16;
             }
             0xFF14 | 0xFF19 => {
                 self.registers.nrx4 = value;
-                // self.sweep.shadow_freq =
-                //     (self.sweep.shadow_freq & 0xFF) | (((value & 0x07) as u16) << 8);
-                // self.timer.set_period(self.sweep.shadow_freq);
                 self.length.enabled = (value & 0x40) != 0;
                 if (value & 0x80) != 0 {
                     self.restart();
