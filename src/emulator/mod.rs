@@ -5,7 +5,7 @@ use web_sys::AudioContext;
 
 // 4194300
 const AUDIO_SAMPLE_RATE: f32 = 44100.0;
-const NUM_AUDIO_CHANNELS: u32 = 1;
+const NUM_AUDIO_CHANNELS: u32 = 2;
 const SAMPLE_DURATION: f64 = BUFFER_SIZE as f64 / AUDIO_SAMPLE_RATE as f64;
 const LATENCY: f64 = 0.000;
 
@@ -55,6 +55,9 @@ impl Emulator {
 
         buffer
             .copy_to_channel_with_start_in_channel(&mut left, 0, 0)
+            .unwrap();
+        buffer
+            .copy_to_channel_with_start_in_channel(&mut right, 1, 0)
             .unwrap();
 
         let source = self.ctx.create_buffer_source().unwrap();

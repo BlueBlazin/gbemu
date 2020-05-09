@@ -48,9 +48,6 @@ enum PixelType {
 }
 
 pub struct Gpu {
-    /// This is what is displayed in the GUI
-    pub screen: Vec<u8>,
-    /// This is what the ppu actually writes to
     pub lcd: Vec<u8>,
     pub vram0: Vec<u8>,
     pub vram1: Vec<u8>,
@@ -79,7 +76,6 @@ impl Gpu {
         }
 
         Gpu {
-            screen: vec![0; SCREEN_HEIGHT * SCREEN_WIDTH * SCREEN_DEPTH],
             lcd: vec![0; SCREEN_HEIGHT * SCREEN_WIDTH * SCREEN_DEPTH],
             vram0: vec![0; VRAM_BANK_SIZE],
             vram1: vec![0; VRAM_BANK_SIZE],
@@ -106,7 +102,7 @@ impl Gpu {
     }
 
     pub fn screen(&self) -> *const u8 {
-        self.screen.as_ptr()
+        self.lcd.as_ptr()
     }
 
     fn draw_line(&mut self) {
@@ -482,13 +478,7 @@ impl Gpu {
         match self.stat.mode {
             GpuMode::OamSearch if self.stat.oam_int != 0 => self.request_lcd_interrupt(),
             GpuMode::HBlank if self.stat.hblank_int != 0 => self.request_lcd_interrupt(),
-            GpuMode::VBlank => {
-                if self.stat.vblank_int != 0 {
-                    self.request_lcd_interrupt();
-                }
-                // Screen should refresh on V-Blank.
-                mem::swap(&mut self.screen, &mut self.lcd);
-            }
+            GpuMode::VBlank if self.stat.vblank_int != 0 => self.request_lcd_interrupt(),
             _ => (),
         }
     }

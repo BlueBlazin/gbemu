@@ -1476,7 +1476,7 @@ mod tests {
     #[test]
     fn test_blargg() {
         // let rom = fs::read("roms/Pokemon - Crystal Version (USA, Europe) (Rev A).gbc").unwrap();
-        let rom = fs::read("roms/Shantae (USA).gbc").unwrap();
+        // let rom = fs::read("roms/Shantae (USA).gbc").unwrap();
         // let rom =
         //     fs::read("roms/Alone in the Dark - The New Nightmare (Europe) (En,Fr,De,Es,It,Nl).gbc")
         //         .unwrap();
@@ -1489,7 +1489,7 @@ mod tests {
         // .unwrap();
 
         // .unwrap();
-        // let rom = fs::read("roms/02-interrupts.gb").unwrap();
+        let rom = fs::read("roms/cpu_instrs.gb").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         let mut flag = true;
@@ -1549,5 +1549,16 @@ mod tests {
             "pc: {:#X} halted: {}, stopped {}",
             cpu.pc, cpu.halted, cpu.stopped
         );
+    }
+
+    use glob::glob;
+
+    #[test]
+    fn test_get_screenshots() {
+        for entry in glob("tmproms/*.gbc").unwrap() {
+            if let Ok(path) = entry {
+                println!("{:?}", path.display());
+            }
+        }
     }
 }
