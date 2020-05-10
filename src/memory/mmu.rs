@@ -52,7 +52,7 @@ impl Mmu {
             apu: Apu::new(),
             ie: 0,
             dma: DmaType::NoDma,
-            timer: Timer::new(),
+            timer: Timer::new(emu_mode.clone()),
             wram: Wram::new(),
             hram: [0; HRAM_SIZE],
             serial_out: 0,
@@ -148,7 +148,7 @@ impl Mmu {
                 0xFF01 => self.serial_out,
                 0xFF04..=0xFF07 => self.timer.get_byte(addr),
                 0xFF0F => {
-                    0x0 | (self.timer.request_timer_int as u8) << 2
+                    0xE0 | (self.timer.request_timer_int as u8) << 2
                         | (self.gpu.request_lcd_int as u8) << 1
                         | (self.gpu.request_vblank_int as u8)
                 }

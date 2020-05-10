@@ -90,7 +90,7 @@ pub struct Cpu {
 
 impl Cpu {
     pub fn new(data: Vec<u8>) -> Self {
-        let emu_mode = if data[0x0143] & 0x80 != 0 {
+        let emu_mode = if (data[0x0143] & 0x80) != 0 {
             EmulationMode::Cgb
         } else {
             EmulationMode::Dmg
@@ -152,18 +152,10 @@ impl Cpu {
         self.cycles = 0;
 
         if self.halted {
-            self.add_cycles(4);
-            self.service_interrupts();
-            return self.cycles;
+            return self.halt_tick();
         }
-
         if self.stopped {
-            self.add_cycles(4);
-            if (self.mmu.get_byte(0xFF00) & 0xF) != 0xF {
-                self.leave_stop_mode();
-                self.add_cycles(8);
-            }
-            return self.cycles;
+            return self.stop_tick();
         }
 
         match self.mmu.dma {
@@ -175,9 +167,26 @@ impl Cpu {
     }
 
     fn cpu_tick(&mut self) {
+        // Check if any interrupt is requested and service it.
+        self.service_interrupts();
+        // Fetch - Decode - Execute
         let opcode = self.fetch();
         self.decode_exec(opcode);
+    }
+
+    fn halt_tick(&mut self) -> usize {
+        self.add_cycles(4);
         self.service_interrupts();
+        self.cycles
+    }
+
+    fn stop_tick(&mut self) -> usize {
+        self.add_cycles(4);
+        if (self.mmu.get_byte(0xFF00) & 0xF) != 0xF {
+            self.leave_stop_mode();
+            self.add_cycles(8);
+        }
+        self.cycles
     }
 
     fn gdma_tick(&mut self) {
@@ -204,33 +213,57 @@ impl Cpu {
     fn service_interrupts(&mut self) {
         let ie = self.mmu.get_byte(0xFFFF);
         let irr = self.mmu.get_byte(0xFF0F);
-        let ints = ie & irr;
+        let ints = ie & irr & 0x1F;
 
         if ints != 0 {
-            self.halted = false;
+            if self.halted {
+                self.halted = false;
+                self.cycles += 4;
+            }
 
             if self.ime {
-                // 0 - V-Blank Interupt
-                if (ints & 0x01) != 0 {
-                    self.di();
-                    self.mmu.set_byte(0xFF0F, irr & 0xFE);
-                    self.rst(0x40);
+                for i in 0..5 {
+                    let mask = 1u8 << i;
+                    if ints & mask != 0 {
+                        self.ime = false;
+                        self.mmu.set_byte(0xFF0F, irr & !mask);
+                        let ms = (self.pc >> 8) as u8;
+                        let ls = (self.pc & 0xFF) as u8;
+
+                        self.sp = self.sp.wrapping_sub(1);
+                        self.mmu.set_byte(self.sp, ms);
+                        self.sp = self.sp.wrapping_sub(1);
+                        self.mmu.set_byte(self.sp, ls);
+                        self.pc = 0x40 + 8 * i;
+
+                        self.cycles += 20;
+                        break;
+                    }
                 }
-                // 1 - LCD Interupt
-                else if (ints & 0x2) != 0 {
-                    self.di();
-                    self.mmu.set_byte(0xFF0F, irr & 0xFD);
-                    self.rst(0x48);
-                }
-                // 2 - Timer Interrupt
-                else if (ints & 0x4) != 0 {
-                    self.di();
-                    self.mmu.set_byte(0xFF0F, irr & 0xFB);
-                    self.rst(0x50);
-                }
-                // 3 - Serial Interrupt
-                // 4 - Joypad Interupt
             }
+
+            // if self.ime {
+            //     // 0 - V-Blank Interupt
+            //     if (ints & 0x01) != 0 {
+            //         self.di();
+            //         self.mmu.set_byte(0xFF0F, irr & 0xFE);
+            //         self.rst(0x40);
+            //     }
+            //     // 1 - LCD Interupt
+            //     else if (ints & 0x2) != 0 {
+            //         self.di();
+            //         self.mmu.set_byte(0xFF0F, irr & 0xFD);
+            //         self.rst(0x48);
+            //     }
+            //     // 2 - Timer Interrupt
+            //     else if (ints & 0x4) != 0 {
+            //         self.di();
+            //         self.mmu.set_byte(0xFF0F, irr & 0xFB);
+            //         self.rst(0x50);
+            //     }
+            //     // 3 - Serial Interrupt
+            //     // 4 - Joypad Interupt
+            // }
         }
     }
 
@@ -1487,14 +1520,12 @@ mod tests {
         //     "roms/Legend of Zelda, The - Link's Awakening DX (USA, Europe) (SGB Enhanced).gbc",
         // )
         // .unwrap();
-
-        // .unwrap();
-        let rom = fs::read("roms/cpu_instrs.gb").unwrap();
+        let rom = fs::read("roms/instr_timing.gb").unwrap();
+        println!("{:#X}", rom[0x147]);
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         let mut flag = true;
-        let mut cycles = 0.0;
-        let mut i = 0;
+        let mut cycles = 0;
         loop {
             // println!(
             //     "pc: {:#X}, opcode: {:#X}, halted: {}",
@@ -1502,21 +1533,7 @@ mod tests {
             //     cpu.mmu.get_byte(cpu.pc),
             //     cpu.halted
             // );
-            cycles += cpu.tick() as f64;
-            // println!("{}", cycles / 4.0);
-            // if flag {
-            //     if i < 50_000_000 {
-            //         cpu.keydown(4);
-            //     } else {
-            //         cpu.keydown(6);
-            //     }
-            // } else {
-            //     if i < 50_000_000 {
-            //         cpu.keyup(4);
-            //     } else {
-            //         cpu.keyup(6);
-            //     }
-            // }
+            cycles += cpu.tick();
             flag = !flag;
         }
     }
@@ -1549,16 +1566,5 @@ mod tests {
             "pc: {:#X} halted: {}, stopped {}",
             cpu.pc, cpu.halted, cpu.stopped
         );
-    }
-
-    use glob::glob;
-
-    #[test]
-    fn test_get_screenshots() {
-        for entry in glob("tmproms/*.gbc").unwrap() {
-            if let Ok(path) = entry {
-                println!("{:?}", path.display());
-            }
-        }
     }
 }

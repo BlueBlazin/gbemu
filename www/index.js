@@ -7,10 +7,6 @@ const CHANNELS = 4;
 const PIXEL_SIZE = 1;
 
 /*********************************************************
- *  Audio (Experimental)
- **********************************************************/
-
-/*********************************************************
  *  Canvas
  **********************************************************/
 
@@ -120,12 +116,17 @@ function emulate(romData) {
   });
 
   const screenPtr = gb.screen();
+  let start = null;
 
-  function renderLoop() {
+  function renderLoop(timestamp) {
+    if (!start) start = timestamp;
+    const delta = timestamp - start;
+    // console.log(1000 / delta);
     // Update emulator
     gb.update();
     // Draw Screen
     drawScreen(screenPtr);
+    start = timestamp;
     requestAnimationFrame(renderLoop);
   }
 

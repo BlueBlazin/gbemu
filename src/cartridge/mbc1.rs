@@ -45,14 +45,22 @@ impl Mbc for Mbc1 {
         match addr {
             0x0000..=0x3FFF => self.rom[addr as usize],
             0x4000..=0x7FFF => {
-                let addr = self.rom_bank as usize * ROM_BANK_SIZE + (addr as usize - ROM_OFFSET);
+                let bank = match self.mode {
+                    Mode::RomBanking => self.rom_bank & 0x7F,
+                    Mode::RamBanking => self.rom_bank & 0x1F,
+                };
+                let addr = bank as usize * ROM_BANK_SIZE + (addr as usize - ROM_OFFSET);
                 self.rom[addr]
             }
             0xA000..=0xBFFF => {
                 if !self.ram_enabled {
                     return 0x00;
                 }
-                let addr = self.ram_bank as usize * RAM_BANK_SIZE + (addr as usize - RAM_OFFSET);
+                let bank = match self.mode {
+                    Mode::RomBanking => 0x0,
+                    Mode::RamBanking => self.ram_bank,
+                };
+                let addr = bank as usize * RAM_BANK_SIZE + (addr as usize - RAM_OFFSET);
                 self.ram[addr]
             }
             _ => panic!("Address out of bounds."),
@@ -62,17 +70,17 @@ impl Mbc for Mbc1 {
     fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
             0x0000..=0x1FFF => {
-                self.ram_enabled = (value & 0x0A) != 0;
+                self.ram_enabled = (value & 0x0F) == 0x0A;
             }
             0x2000..=0x3FFF => {
                 self.rom_bank = match value & 0x1F {
-                    0x00 => (self.rom_bank & 0x60) | 0x01,
+                    0x0 => (self.rom_bank & 0x60) | 0x1,
                     low => (self.rom_bank & 0x60) | low,
                 };
             }
             0x4000..=0x5FFF => match self.mode {
                 Mode::RomBanking => {
-                    self.rom_bank |= (value & 0x03) << 5;
+                    self.rom_bank = (self.rom_bank & 0x9F) | ((value & 0x03) << 5);
                 }
                 Mode::RamBanking => {
                     self.ram_bank = value & 0x03;

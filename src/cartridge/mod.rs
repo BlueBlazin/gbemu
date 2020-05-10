@@ -19,17 +19,12 @@ pub struct Cartridge {
 
 impl Cartridge {
     pub fn new(data: Vec<u8>) -> Self {
-        println!("Cart type: {:#X}", data[0x0147]);
-        let mbc: Box<dyn Mbc> = match data[0x0147] {
-            0x00 => Box::from(Mbc0::new(data)),
+        let mbc: Box<dyn Mbc> = match data[0x147] {
+            0x00 | 0x08 | 0x09 => Box::from(Mbc0::new(data)),
             0x01..=0x03 => Box::from(Mbc1::new(data)),
-            0x08..=0x09 => Box::from(Mbc0::new(data)),
             0x0F..=0x13 => Box::from(Mbc3::new(data)),
             0x19..=0x1E => Box::from(Mbc5::new(data)),
-            // Blargg's combined tests
-            0x73 => Box::from(Mbc1::new(data)),
-            _ if data.len() > 0x8000 => Box::from(Mbc3::new(data)),
-            _ => Box::from(Mbc0::new(data)),
+            _ => panic!("Unsupported MBC type."),
         };
 
         Self { mbc }

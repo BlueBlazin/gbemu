@@ -6,9 +6,9 @@ A Gameboy emulator written in Rust, compiled to WebAssembly, and running in the 
 
 ## Screenshots
 
+![3](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/3.png)
 ![1](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/1.png)
 ![2](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/2.png)
-![3](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/3.png)
 ![4](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/4.png)
 ![5](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/5.png)
 ![6](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/6.png)
