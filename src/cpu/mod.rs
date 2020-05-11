@@ -237,33 +237,10 @@ impl Cpu {
                         self.pc = 0x40 + 8 * i;
 
                         self.cycles += 20;
-                        break;
+                        return;
                     }
                 }
             }
-
-            // if self.ime {
-            //     // 0 - V-Blank Interupt
-            //     if (ints & 0x01) != 0 {
-            //         self.di();
-            //         self.mmu.set_byte(0xFF0F, irr & 0xFE);
-            //         self.rst(0x40);
-            //     }
-            //     // 1 - LCD Interupt
-            //     else if (ints & 0x2) != 0 {
-            //         self.di();
-            //         self.mmu.set_byte(0xFF0F, irr & 0xFD);
-            //         self.rst(0x48);
-            //     }
-            //     // 2 - Timer Interrupt
-            //     else if (ints & 0x4) != 0 {
-            //         self.di();
-            //         self.mmu.set_byte(0xFF0F, irr & 0xFB);
-            //         self.rst(0x50);
-            //     }
-            //     // 3 - Serial Interrupt
-            //     // 4 - Joypad Interupt
-            // }
         }
     }
 
@@ -1299,233 +1276,13 @@ mod tests {
     use super::*;
     use std::fs;
 
-    // Test Atomics
-    #[test]
-    fn test_imm16() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.memory_set(0xC000 + 0, 0xFE);
-        cpu.memory_set(0xC000 + 1, 0xFF);
-        cpu.pc = 0xC000;
-        assert_eq!(cpu.get_imm16(), 0xFFFE);
-    }
-
-    #[test]
-    fn test_memory_get_set() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.memory_set(0xC000, 0xFF);
-        assert_eq!(cpu.memory_get(0xC000), 0xFF);
-    }
-
-    #[test]
-    fn test_r16_get_set() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.set_r16(R16::AF, 1);
-        cpu.set_r16(R16::BC, 2);
-        cpu.set_r16(R16::DE, 3);
-        cpu.set_r16(R16::HL, 4);
-        cpu.set_r16(R16::SP, 5);
-        assert_eq!(cpu.get_r16(&R16::AF), 1);
-        assert_eq!(cpu.get_r16(&R16::BC), 2);
-        assert_eq!(cpu.get_r16(&R16::DE), 3);
-        assert_eq!(cpu.get_r16(&R16::HL), 4);
-        assert_eq!(cpu.get_r16(&R16::SP), 5);
-    }
-
-    #[test]
-    fn test_r8_get_set() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.set_r8(R8::A, 1);
-        cpu.set_r8(R8::B, 2);
-        cpu.set_r8(R8::C, 3);
-        cpu.set_r8(R8::D, 4);
-        cpu.set_r8(R8::E, 5);
-        cpu.set_r8(R8::F, 6);
-        cpu.set_r8(R8::H, 7);
-        cpu.set_r8(R8::L, 8);
-
-        assert_eq!(cpu.get_r8(&R8::A), 1);
-        assert_eq!(cpu.get_r8(&R8::B), 2);
-        assert_eq!(cpu.get_r8(&R8::C), 3);
-        assert_eq!(cpu.get_r8(&R8::D), 4);
-        assert_eq!(cpu.get_r8(&R8::E), 5);
-        assert_eq!(cpu.get_r8(&R8::F), 6);
-        assert_eq!(cpu.get_r8(&R8::H), 7);
-        assert_eq!(cpu.get_r8(&R8::L), 8);
-    }
-
-    #[test]
-    fn test_fetch() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.memory_set(0xC000 + 0, 0xAA);
-        cpu.memory_set(0xC000 + 1, 0xBB);
-        cpu.memory_set(0xC000 + 2, 0xCC);
-        cpu.pc = 0xC000;
-        assert_eq!(cpu.pc, 0xC000 + 0);
-        assert_eq!(cpu.fetch(), 0xAA);
-        assert_eq!(cpu.pc, 0xC000 + 1);
-        assert_eq!(cpu.fetch(), 0xBB);
-        assert_eq!(cpu.pc, 0xC000 + 2);
-        assert_eq!(cpu.fetch(), 0xCC);
-        assert_eq!(cpu.pc, 0xC000 + 3);
-    }
-
-    // Load, Store, Push, Pop
-
-    #[test]
-    fn test_stack() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.push(1);
-        cpu.push(2);
-        cpu.push(3);
-        assert_eq!(cpu.pop(), 3);
-        assert_eq!(cpu.pop(), 2);
-        assert_eq!(cpu.pop(), 1);
-    }
-
-    #[test]
-    fn test_get_imm_8() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.pc = 0xC000;
-        cpu.memory_set(0xC000, 0x01);
-        assert_eq!(cpu.get_imm8(), 0x01);
-    }
-
-    #[test]
-    fn test_get_imm_16() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.pc = 0xC000;
-        cpu.memory_set(0xC000 + 0, 0x01);
-        cpu.memory_set(0xC000 + 1, 0x02);
-        assert_eq!(cpu.get_imm16(), 0x0201);
-    }
-
-    #[test]
-    fn test_get_set_addr() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.set_r16(R16::AF, 0xC000 + 0);
-        cpu.set_r16(R16::BC, 0xC000 + 1);
-        cpu.set_r16(R16::DE, 0xC000 + 2);
-        cpu.set_r16(R16::HL, 0xC000 + 3);
-        cpu.set_r16(R16::SP, 0xC000 + 4);
-
-        cpu.set_addr(Addr::AF, 1);
-        cpu.set_addr(Addr::BC, 2);
-        cpu.set_addr(Addr::DE, 3);
-        cpu.set_addr(Addr::HL, 4);
-        cpu.set_addr(Addr::SP, 5);
-        assert_eq!(cpu.get_addr(&Addr::AF), 1);
-        assert_eq!(cpu.get_addr(&Addr::BC), 2);
-        assert_eq!(cpu.get_addr(&Addr::DE), 3);
-        assert_eq!(cpu.get_addr(&Addr::HL), 4);
-        assert_eq!(cpu.get_addr(&Addr::SP), 5);
-    }
-
-    #[test]
-    fn test_get_addr_inc_dec() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.memory_set(0xC000, 7);
-        cpu.memory_set(0xC000 + 1, 10);
-        cpu.set_r16(R16::HL, 0xC000);
-        assert_eq!(cpu.get_addr_inc(), 7);
-        assert_eq!(cpu.get_r16(&R16::HL), 0xC000 + 1);
-        assert_eq!(cpu.get_addr_dec(), 10);
-        assert_eq!(cpu.get_r16(&R16::HL), 0xC000);
-    }
-
-    #[test]
-    fn test_set_addr_inc_dec() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.set_r16(R16::HL, 0xC000);
-        cpu.set_addr_inc(7);
-        assert_eq!(cpu.memory_get(0xC000), 7);
-        assert_eq!(cpu.get_r16(&R16::HL), 0xC000 + 1);
-        cpu.set_addr_dec(10);
-        assert_eq!(cpu.memory_get(0xC000 + 1), 10);
-        assert_eq!(cpu.get_r16(&R16::HL), 0xC000);
-    }
-
-    #[test]
-    fn test_get_flag() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.set_r8(R8::F, 0b10100000);
-        assert_eq!(cpu.get_flag(Flag::Z), 1);
-        assert_eq!(cpu.get_flag(Flag::N), 0);
-        assert_eq!(cpu.get_flag(Flag::H), 1);
-        assert_eq!(cpu.get_flag(Flag::C), 0);
-    }
-
-    #[test]
-    fn test_set_flag() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-
-        cpu.set_flag(Flag::Z);
-        cpu.reset_flag(Flag::N);
-        cpu.set_flag(Flag::H);
-        cpu.reset_flag(Flag::C);
-
-        assert_eq!(cpu.get_flag(Flag::Z), 1);
-        assert_eq!(cpu.get_flag(Flag::N), 0);
-        assert_eq!(cpu.get_flag(Flag::H), 1);
-        assert_eq!(cpu.get_flag(Flag::C), 0);
-    }
-
-    #[test]
-    fn test_push_pop_r16() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.set_r16(R16::AF, 0xAB);
-        cpu.set_r16(R16::BC, 0xCD);
-        cpu.push_r16(R16::AF);
-        cpu.push_r16(R16::BC);
-        cpu.pop_r16(R16::DE);
-        cpu.pop_r16(R16::HL);
-        assert_eq!(cpu.get_r16(&R16::DE), 0xCD);
-        assert_eq!(cpu.get_r16(&R16::HL), 0xAB);
-    }
-
-    // ALU Tests
-
-    #[test]
-    fn test_dec_r8() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.set_r8(R8::D, 1);
-        cpu.dec_r8(R8::D);
-        assert_eq!(cpu.get_r8(&R8::D), 0);
-        assert_eq!(cpu.get_flag(Flag::Z), 1);
-        assert_eq!(cpu.get_flag(Flag::N), 1);
-        assert_eq!(cpu.get_flag(Flag::H), 1);
-    }
-
-    #[test]
-    fn test_jr() {
-        let mut cpu = Cpu::new(vec![0; 0x8000]);
-        cpu.pc = 0xC000;
-        cpu.set_addr_imm(0xC000 + 1, 0x1);
-        cpu.set_r8(R8::D, 1);
-        cpu.dec_r8(R8::D);
-        cpu.jr_cc_n(Flag::Z, false);
-        assert_eq!(cpu.pc, 0xC001);
-    }
-
     #[test]
     fn test_blargg() {
-        // let rom = fs::read("roms/Pokemon - Crystal Version (USA, Europe) (Rev A).gbc").unwrap();
-        // let rom = fs::read("roms/Shantae (USA).gbc").unwrap();
-        // let rom =
-        //     fs::read("roms/Alone in the Dark - The New Nightmare (Europe) (En,Fr,De,Es,It,Nl).gbc")
-        //         .unwrap();
-        // let rom = fs::read("roms/Legend of Zelda, The - Oracle of Ages (U) [C][!].gbc").unwrap();
-        // let rom = fs::read("roms/Pokemon - Silver Version (UE) [C][!].gbc").unwrap();
-        // let rom = fs::read("roms/Pokemon Red (UE) [S][!].gb").unwrap();
-        // let rom = fs::read(
-        //     "roms/Legend of Zelda, The - Link's Awakening DX (USA, Europe) (SGB Enhanced).gbc",
-        // )
-        // .unwrap();
-        let rom = fs::read("roms/instr_timing.gb").unwrap();
+        // let rom = fs::read("roms/instr_timing.gb").unwrap();
+        let rom = fs::read("roms/acceptance/timer/div_write.gb").unwrap();
         println!("{:#X}", rom[0x147]);
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
-        let mut flag = true;
-        let mut cycles = 0;
         loop {
             // println!(
             //     "pc: {:#X}, opcode: {:#X}, halted: {}",
@@ -1533,38 +1290,7 @@ mod tests {
             //     cpu.mmu.get_byte(cpu.pc),
             //     cpu.halted
             // );
-            cycles += cpu.tick();
-            flag = !flag;
-        }
-    }
-
-    fn update(cpu: &mut Cpu) -> usize {
-        let mut frames = 0;
-        loop {
-            cpu.frame();
-            frames += 1;
-            if let (Some(_), Some(_)) = cpu.mmu.apu.get_next_buffer() {
-                break;
-            }
-        }
-        frames
-    }
-
-    #[test]
-    fn test_frames() {
-        let rom = fs::read("roms/Shantae (USA).gbc").unwrap();
-        let mut cpu = Cpu::new(rom);
-        cpu.simulate_bootrom();
-        for _ in 0..10000 {
-            println!(
-                "pc: {:#X} halted: {}, stopped {}",
-                cpu.pc, cpu.halted, cpu.stopped
-            );
             cpu.tick();
         }
-        println!(
-            "pc: {:#X} halted: {}, stopped {}",
-            cpu.pc, cpu.halted, cpu.stopped
-        );
     }
 }
