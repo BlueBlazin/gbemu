@@ -29,7 +29,7 @@ pub struct Mmu {
     pub apu: Apu,
     pub ie: u8,
     pub dma: DmaType,
-    timer: Timer,
+    pub timer: Timer,
     wram: Wram,
     hram: [u8; HRAM_SIZE],
     serial_out: u8,
@@ -40,6 +40,7 @@ pub struct Mmu {
     emu_mode: EmulationMode,
     pub cgb_mode: CgbMode,
     pub new_hdma: bool,
+    request_serial_int: bool,
 }
 
 impl Mmu {
@@ -62,6 +63,7 @@ impl Mmu {
             emu_mode,
             cgb_mode: CgbMode::new(),
             new_hdma: false,
+            request_serial_int: false,
         }
     }
 
@@ -148,7 +150,8 @@ impl Mmu {
                 0xFF01 => self.serial_out,
                 0xFF04..=0xFF07 => self.timer.get_byte(addr),
                 0xFF0F => {
-                    0xE0 | (self.timer.request_timer_int as u8) << 2
+                    0xE0 | (self.request_serial_int as u8) << 3
+                        | (self.timer.request_timer_int as u8) << 2
                         | (self.gpu.request_lcd_int as u8) << 1
                         | (self.gpu.request_vblank_int as u8)
                 }
@@ -215,6 +218,8 @@ impl Mmu {
                     self.gpu.request_vblank_int = (value & 0x01) != 0;
                     self.gpu.request_lcd_int = (value & 0x02) != 0;
                     self.timer.request_timer_int = (value & 0x04) != 0;
+                    self.request_serial_int = (value & 0x08) != 0;
+                    println!("write IF: {:#X}", value);
                 }
                 0xFF10..=0xFF3F => self.apu.set_byte(addr, value),
                 _ => (),
@@ -259,7 +264,10 @@ impl Mmu {
             // FF80-FFFE   High RAM (HRAM)
             0xFF80..=0xFFFE => self.hram[(addr - HRAM_OFFSET) as usize] = value,
             // FFFF        Interrupt Enable Register
-            0xFFFF => self.ie = value,
+            0xFFFF => {
+                println!("write IE: {:#X}", value);
+                self.ie = value
+            }
         }
     }
 

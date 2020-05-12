@@ -11,11 +11,13 @@ pub enum EmulationMode {
     Cgb,
 }
 
+#[derive(Debug)]
 pub enum CgbSpeed {
     Normal,
     Double,
 }
 
+#[derive(Debug)]
 pub struct CgbMode {
     pub speed: CgbSpeed,
     pub prepare_speed_switch: u8,
@@ -168,15 +170,15 @@ impl Cpu {
 
     fn cpu_tick(&mut self) {
         // Check if any interrupt is requested and service it.
-        self.service_interrupts();
+        self.service_pending_interrupts();
         // Fetch - Decode - Execute
         let opcode = self.fetch();
         self.decode_exec(opcode);
     }
 
     fn halt_tick(&mut self) -> usize {
+        self.service_pending_interrupts();
         self.add_cycles(4);
-        self.service_interrupts();
         self.cycles
     }
 
@@ -210,7 +212,7 @@ impl Cpu {
         });
     }
 
-    fn service_interrupts(&mut self) {
+    fn service_pending_interrupts(&mut self) {
         let ie = self.mmu.get_byte(0xFFFF);
         let irr = self.mmu.get_byte(0xFF0F);
         let ints = ie & irr & 0x1F;
@@ -218,30 +220,47 @@ impl Cpu {
         if ints != 0 {
             if self.halted {
                 self.halted = false;
-                self.cycles += 4;
             }
 
             if self.ime {
+                // -----------------------------------------------------------
+                // * Edge case
+                // -----------------------------------------------------------
+                self.sp = self.sp.wrapping_sub(1);
+                self.mmu.set_byte(self.sp, (self.pc >> 8) as u8);
+                let mut ints = self.mmu.get_byte(0xFFFF) & irr & 0x1F;
+                self.sp = self.sp.wrapping_sub(1);
+                self.mmu.set_byte(self.sp, (self.pc & 0xFF) as u8);
+                // If SP was IF, pushing lower byte of PC modified IF.
+                ints &= if self.sp == 0xFF0F {
+                    irr & 0x1F
+                } else {
+                    self.mmu.get_byte(0xFF0F) & 0x1F
+                };
+
+                // -----------------------------------------------------------
+
+                if ints == 0 {
+                    self.pc = 0x0000;
+                    return;
+                }
+
                 for i in 0..5 {
-                    let mask = 1u8 << i;
-                    if ints & mask != 0 {
-                        self.ime = false;
-                        self.mmu.set_byte(0xFF0F, irr & !mask);
-                        let ms = (self.pc >> 8) as u8;
-                        let ls = (self.pc & 0xFF) as u8;
-
-                        self.sp = self.sp.wrapping_sub(1);
-                        self.mmu.set_byte(self.sp, ms);
-                        self.sp = self.sp.wrapping_sub(1);
-                        self.mmu.set_byte(self.sp, ls);
-                        self.pc = 0x40 + 8 * i;
-
-                        self.cycles += 20;
-                        return;
+                    if ints & (1u8 << i) != 0 {
+                        println!("INT FIRED: {:#X}", 1u8 << i);
+                        return self.dispatch_interrupt(irr, i);
                     }
                 }
             }
         }
+    }
+
+    fn dispatch_interrupt(&mut self, irr: u8, i: u16) {
+        let mask = 1u8 << i;
+        self.ime = false;
+        self.mmu.set_byte(0xFF0F, irr & !mask);
+        self.pc = 0x40 + 8 * i;
+        self.add_cycles(20);
     }
 
     fn leave_stop_mode(&mut self) {
@@ -323,10 +342,10 @@ impl Cpu {
     }
 
     pub fn ret_cc(&mut self, flag: Flag, set: bool) {
+        self.add_cycles(4);
         if self.get_flag(flag) == set as u8 {
             self.ret();
         }
-        self.add_cycles(4);
     }
 
     pub fn reti(&mut self) {
@@ -364,8 +383,8 @@ impl Cpu {
 
     #[inline]
     pub fn jp_addr(&mut self, addr: u16) {
-        self.pc = addr;
         self.add_cycles(4);
+        self.pc = addr;
     }
 
     pub fn jp_nn(&mut self) {
@@ -639,6 +658,7 @@ impl Cpu {
 
     /// Disable inerrupts.
     pub fn di(&mut self) {
+        println!("DI");
         self.ime = false;
     }
 
@@ -742,6 +762,7 @@ impl Cpu {
     // -------------------------------------------------------------
 
     pub fn add_sp_imm(&mut self) {
+        self.add_cycles(4);
         let value = self.get_imm8() as i8 as u16;
         let n = self.get_r16(&R16::SP);
         let res = n.wrapping_add(value);
@@ -750,7 +771,6 @@ impl Cpu {
         self.setc_flag(Flag::H, (value & 0xF) + (n & 0xF) > 0xF);
         self.setc_flag(Flag::C, (value & 0xFF) + (n & 0xFF) > 0xFF);
         self.set_r16(R16::SP, res);
-        self.add_cycles(4);
     }
 
     pub fn add_sp_imm_hl(&mut self) {
@@ -992,6 +1012,7 @@ impl Cpu {
     }
 
     pub fn push_r16(&mut self, r: R16) {
+        self.add_cycles(4);
         match r {
             R16::AF => {
                 let ms = self.get_r8(&R8::A) as u8;
@@ -1019,7 +1040,6 @@ impl Cpu {
             }
             R16::SP => (),
         }
-        self.add_cycles(4);
     }
 
     pub fn get_flag(&self, flag: Flag) -> u8 {
@@ -1205,6 +1225,7 @@ impl Cpu {
 
     /// Sets values of combined 16bit register.
     pub fn set_r16(&mut self, r: R16, value: u16) {
+        self.add_cycles(4);
         let ms = ((0xFF00 & value) >> 8) as u8;
         let ls = (0x00FF & value) as u8;
         match r {
@@ -1228,7 +1249,6 @@ impl Cpu {
                 self.sp = value;
             }
         }
-        self.add_cycles(4);
     }
 
     pub fn set_r16_imm(&mut self, r: R16) {
@@ -1260,8 +1280,8 @@ impl Cpu {
 
     #[inline]
     pub fn memory_set(&mut self, addr: u16, value: u8) {
-        self.mmu.set_byte(addr, value);
         self.add_cycles(4);
+        self.mmu.set_byte(addr, value);
     }
 
     #[inline]
@@ -1279,10 +1299,12 @@ mod tests {
     #[test]
     fn test_blargg() {
         // let rom = fs::read("roms/instr_timing.gb").unwrap();
-        let rom = fs::read("roms/acceptance/timer/div_write.gb").unwrap();
+        // let rom = fs::read("roms/acceptance/timer/tim00.gb").unwrap();
+        let rom = fs::read("roms/interrupt_time.gb").unwrap();
         println!("{:#X}", rom[0x147]);
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
+        println!("Starting");
         loop {
             // println!(
             //     "pc: {:#X}, opcode: {:#X}, halted: {}",

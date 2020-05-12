@@ -29,8 +29,10 @@ impl Divider {
     }
 }
 
+#[derive(Debug, PartialEq)]
 enum TimerState {
     Reloading,
+    Reloaded,
     Running,
 }
 
@@ -62,14 +64,26 @@ impl Timer {
     }
 
     pub fn tick(&mut self, cycles: usize) {
-        for _ in 0..cycles {
+        let mut i = 0;
+        while i < cycles {
             let old_signal = self.signal();
-            self.divider.tick(1);
+            self.divider.tick(4);
+            self.advance_state(old_signal);
+            i += 4;
+        }
+    }
 
-            match self.state {
-                TimerState::Reloading => self.advance_state(),
-                TimerState::Running => self.detect_falling_edge(old_signal),
+    fn advance_state(&mut self, old_signal: u8) {
+        match self.state {
+            TimerState::Reloading => {
+                self.counter = self.tma;
+                self.request_timer_int = true;
+                self.state = TimerState::Reloaded;
             }
+            TimerState::Reloaded => {
+                self.state = TimerState::Running;
+            }
+            TimerState::Running => self.detect_falling_edge(old_signal),
         }
     }
 
@@ -84,15 +98,6 @@ impl Timer {
         }
     }
 
-    fn advance_state(&mut self) {
-        self.state_counter -= 1;
-        if self.state_counter == 0 {
-            self.state = TimerState::Running;
-            self.counter = self.tma;
-            self.request_timer_int = true;
-        }
-    }
-
     #[inline]
     fn signal(&self) -> u8 {
         (self.timer_enable >> 2) & (self.divider.counter >> self.tima_bit) as u8
@@ -101,7 +106,13 @@ impl Timer {
     pub fn get_byte(&self, addr: u16) -> u8 {
         match addr {
             0xFF04 => self.divider.get_byte(),
-            0xFF05 => self.counter,
+            0xFF05 => {
+                // println!(
+                //     "TIMA read. TIMA: {}. Internal counter: {}",
+                //     self.counter, self.divider.counter
+                // );
+                self.counter
+            }
             0xFF06 => self.tma,
             0xFF07 => self.timer_enable | self.freq,
             _ => 0x00,
@@ -110,13 +121,41 @@ impl Timer {
 
     pub fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
-            0xFF04 => self.divider.set_byte(),
-            0xFF05 => self.counter = value,
-            0xFF06 => self.tma = value,
+            0xFF04 => {
+                let old_signal = self.signal();
+                self.divider.set_byte();
+                // println!(
+                //     "DIV reset. TIMA: {}. Internal counter: {}. TMA: {}",
+                //     self.counter, self.divider.counter, self.tma
+                // );
+                self.detect_falling_edge(old_signal);
+            }
+            0xFF05 if self.state != TimerState::Reloaded => {
+                self.counter = value;
+                // println!(
+                //     "TIMA set. TIMA: {}. Internal counter: {}. TMA: {}",
+                //     self.counter, self.divider.counter, self.tma
+                // );
+            }
+            0xFF06 => {
+                self.tma = value;
+                if self.timer_enable != 0 && self.state == TimerState::Reloaded {
+                    self.counter = value;
+                    self.state = TimerState::Running;
+                }
+                // println!(
+                //     "TMA set. TIMA: {}. Internal counter: {}. TMA: {}",
+                //     self.counter, self.divider.counter, self.tma
+                // );
+            }
             0xFF07 => {
                 self.timer_enable = value & 0x04;
                 self.freq = value & 0x03;
                 self.tima_bit = COUNTER_SHIFT[self.freq as usize];
+                // println!(
+                //     "TAC set. TIMA: {}. Internal counter: {}. TMA: {}",
+                //     self.counter, self.divider.counter, self.tma
+                // );
             }
             _ => (),
         }
@@ -127,13 +166,37 @@ impl Timer {
 mod tests {
     use super::*;
 
+    const DIV: u16 = 0xFF04;
+    const TIMA: u16 = 0xFF05;
+    const TMA: u16 = 0xFF06;
+    const TAC: u16 = 0xFF07;
+
+    #[test]
+    fn test_div_trigger() {
+        let mut timer = Timer::new(EmulationMode::Dmg);
+
+        let mut a = 0;
+        let b = 4;
+        timer.set_byte(DIV, a);
+        a = b;
+        timer.set_byte(TIMA, a);
+        timer.set_byte(TMA, a);
+        a = 0b00000100;
+        timer.set_byte(TAC, a);
+        a ^= a;
+        timer.set_byte(DIV, a);
+
+        timer.tick(512);
+        println!("{}", timer.get_byte(TIMA));
+
+        timer.set_byte(DIV, 0);
+
+        println!("{}", timer.get_byte(TIMA));
+    }
+
     #[test]
     fn test_timer() {
         let mut timer = Timer::new(EmulationMode::Dmg);
-        const DIV: u16 = 0xFF04;
-        const TIMA: u16 = 0xFF05;
-        const TMA: u16 = 0xFF06;
-        const TAC: u16 = 0xFF07;
 
         let mut a = 0;
         let b = 4;
