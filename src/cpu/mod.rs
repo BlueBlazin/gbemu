@@ -1,7 +1,7 @@
 pub mod opcodes;
 
 use crate::joypad::Key;
-use crate::memory::mmu::{DmaType, Mmu};
+use crate::memory::mmu::{HdmaType, Mmu};
 
 const MAX_CYCLES: usize = 69905;
 
@@ -160,9 +160,9 @@ impl Cpu {
             return self.stop_tick();
         }
 
-        match self.mmu.dma {
-            DmaType::GPDma => self.gdma_tick(),
-            DmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
+        match self.mmu.hdma.hdma_type {
+            HdmaType::GPDma => self.gdma_tick(),
+            HdmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
             _ => self.cpu_tick(),
         }
         self.cycles
@@ -201,8 +201,8 @@ impl Cpu {
     }
 
     fn hdma_tick(&mut self) {
-        if self.mmu.new_hdma {
-            self.mmu.new_hdma = false;
+        if self.mmu.hdma.new_hdma {
+            self.mmu.hdma.new_hdma = false;
             self.cycles += 4;
         }
         let cycles = self.mmu.hdma_tick();

@@ -12,10 +12,48 @@ const HRAM_OFFSET: u16 = 0xFF80;
 const WRAM_OFFSET: u16 = 0xC000;
 const ECHO_OFFSET: u16 = 0xE000;
 
-pub enum DmaType {
-    NoDma,
+pub struct OamDma {
+    pub is_active: bool,
+    pub cycles: usize,
+    pub src_addr: u16,
+    pub i: usize,
+}
+
+impl Default for OamDma {
+    fn default() -> Self {
+        Self {
+            is_active: false,
+            cycles: 0,
+            src_addr: 0,
+            i: 0,
+        }
+    }
+}
+
+pub enum HdmaType {
+    NoHdma,
     HBlankDma,
     GPDma,
+}
+
+pub struct Hdma {
+    pub hdma_type: HdmaType,
+    pub new_hdma: bool,
+    src: u16,
+    dst: u16,
+    blocks: u8,
+}
+
+impl Default for Hdma {
+    fn default() -> Self {
+        Self {
+            hdma_type: HdmaType::NoHdma,
+            new_hdma: false,
+            src: 0,
+            dst: 0,
+            blocks: 0,
+        }
+    }
 }
 
 /// Memory Management Unit (MMU)
@@ -28,18 +66,19 @@ pub struct Mmu {
     pub joypad: Joypad,
     pub apu: Apu,
     pub ie: u8,
-    pub dma: DmaType,
+    // pub hdma: HdmaType,
+    pub hdma: Hdma,
+    pub oam_dma: OamDma,
     pub timer: Timer,
     wram: Wram,
     hram: [u8; HRAM_SIZE],
     serial_out: u8,
-    hdma_src: u16,
-    hdma_dst: u16,
-    hdma_blocks: u8,
-    #[allow(dead_code)]
+    // hdma.src: u16,
+    // hdma.dst: u16,
+    // hdma.blocks: u8,
     emu_mode: EmulationMode,
     pub cgb_mode: CgbMode,
-    pub new_hdma: bool,
+    // pub new_hdma: bool,
     request_serial_int: bool,
 }
 
@@ -52,17 +91,19 @@ impl Mmu {
             joypad: Joypad::new(),
             apu: Apu::new(),
             ie: 0,
-            dma: DmaType::NoDma,
+            // hdma: HdmaType::NoHdma,
+            hdma: Hdma::default(),
+            oam_dma: OamDma::default(),
             timer: Timer::new(emu_mode.clone()),
             wram: Wram::new(),
             hram: [0; HRAM_SIZE],
             serial_out: 0,
-            hdma_src: 0,
-            hdma_dst: 0,
-            hdma_blocks: 0,
+            // hdma.src: 0,
+            // hdma.dst: 0,
+            // hdma.blocks: 0,
             emu_mode,
             cgb_mode: CgbMode::new(),
-            new_hdma: false,
+            // new_hdma: false,
             request_serial_int: false,
         }
     }
@@ -72,35 +113,35 @@ impl Mmu {
     }
 
     pub fn gdma_tick(&mut self) -> usize {
-        let blocks = self.hdma_blocks as usize;
-        while self.hdma_blocks > 0 {
+        let blocks = self.hdma.blocks as usize;
+        while self.hdma.blocks > 0 {
             self.hdma_transfer_block();
         }
-        self.dma = DmaType::NoDma;
+        self.hdma.hdma_type = HdmaType::NoHdma;
         blocks * 32
     }
 
     pub fn hdma_tick(&mut self) -> usize {
         self.hdma_transfer_block();
-        if self.hdma_blocks == 0 {
-            self.dma = DmaType::NoDma;
+        if self.hdma.blocks == 0 {
+            self.hdma.hdma_type = HdmaType::NoHdma;
         }
         32
     }
 
     fn hdma_transfer_block(&mut self) {
-        if self.hdma_blocks == 0 {
+        if self.hdma.blocks == 0 {
             return;
         }
 
         for _ in 0..16 {
-            let value = self.get_byte(self.hdma_src);
-            self.set_byte(0x8000 | (self.hdma_dst & 0x1FFF), value);
-            self.hdma_src += 1;
-            self.hdma_dst += 1;
+            let value = self.get_byte(self.hdma.src);
+            self.set_byte(0x8000 | (self.hdma.dst & 0x1FFF), value);
+            self.hdma.src += 1;
+            self.hdma.dst += 1;
         }
 
-        self.hdma_blocks -= 1;
+        self.hdma.blocks -= 1;
     }
 
     pub fn apu_tick(&mut self, cycles: usize) {
@@ -168,10 +209,10 @@ impl Mmu {
                 0xFF4D => u8::from(&self.cgb_mode),
                 0xFF4F => self.gpu.get_byte(addr),
                 0xFF51..=0xFF54 => 0xFF,
-                0xFF55 => match self.dma {
-                    DmaType::GPDma => self.hdma_blocks,
-                    DmaType::HBlankDma => self.hdma_blocks,
-                    DmaType::NoDma => 0x80,
+                0xFF55 => match self.hdma.hdma_type {
+                    HdmaType::GPDma => self.hdma.blocks,
+                    HdmaType::HBlankDma => self.hdma.blocks,
+                    HdmaType::NoHdma => 0x80,
                 },
                 0xFF68..=0xFF6B => self.gpu.get_byte(addr),
                 0xFF70 => self.wram.get_byte(addr),
@@ -243,19 +284,19 @@ impl Mmu {
                 }
             }
             0xFF51..=0xFF7F => match addr {
-                0xFF51 => self.hdma_src = (self.hdma_src & 0xF0) | ((value as u16) << 8),
-                0xFF52 => self.hdma_src = (self.hdma_src & 0xFF00) | (value as u16 & 0xF0),
-                0xFF53 => self.hdma_dst = (self.hdma_dst & 0xF0) | ((value as u16) << 8),
-                0xFF54 => self.hdma_dst = (self.hdma_dst & 0x1F00) | (value as u16 & 0xF0),
+                0xFF51 => self.hdma.src = (self.hdma.src & 0xF0) | ((value as u16) << 8),
+                0xFF52 => self.hdma.src = (self.hdma.src & 0xFF00) | (value as u16 & 0xF0),
+                0xFF53 => self.hdma.dst = (self.hdma.dst & 0xF0) | ((value as u16) << 8),
+                0xFF54 => self.hdma.dst = (self.hdma.dst & 0x1F00) | (value as u16 & 0xF0),
                 0xFF55 => {
-                    self.dma = match value & 0x80 {
-                        0x00 => DmaType::GPDma,
+                    self.hdma.hdma_type = match value & 0x80 {
+                        0x00 => HdmaType::GPDma,
                         _ => {
-                            self.new_hdma = true;
-                            DmaType::HBlankDma
+                            self.hdma.new_hdma = true;
+                            HdmaType::HBlankDma
                         }
                     };
-                    self.hdma_blocks = value & 0x7F;
+                    self.hdma.blocks = value & 0x7F;
                 }
                 0xFF68..=0xFF6B => self.gpu.set_byte(addr, value),
                 0xFF70 => self.wram.set_byte(addr, value),
