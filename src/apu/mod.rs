@@ -65,6 +65,12 @@ impl Apu {
         }
     }
 
+    pub fn simulate_bootrom(&mut self) {
+        self.set_byte(0xFF24, 0x77);
+        self.set_byte(0xFF25, 0xF3);
+        self.set_byte(0xFF26, 0xF1);
+    }
+
     pub fn tick(&mut self, cycles: usize) {
         for _ in 0..cycles {
             self.clocks += 1;

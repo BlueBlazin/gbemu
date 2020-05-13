@@ -13,19 +13,19 @@ const WRAM_OFFSET: u16 = 0xC000;
 const ECHO_OFFSET: u16 = 0xE000;
 
 pub struct OamDma {
-    pub is_active: bool,
-    pub cycles: usize,
+    pub active: bool,
     pub src_addr: u16,
-    pub i: usize,
+    pub i: u16,
+    pub just_launched: bool,
 }
 
 impl Default for OamDma {
     fn default() -> Self {
         Self {
-            is_active: false,
-            cycles: 0,
+            active: false,
             src_addr: 0,
             i: 0,
+            just_launched: false,
         }
     }
 }
@@ -66,19 +66,14 @@ pub struct Mmu {
     pub joypad: Joypad,
     pub apu: Apu,
     pub ie: u8,
-    // pub hdma: HdmaType,
     pub hdma: Hdma,
     pub oam_dma: OamDma,
     pub timer: Timer,
     wram: Wram,
     hram: [u8; HRAM_SIZE],
     serial_out: u8,
-    // hdma.src: u16,
-    // hdma.dst: u16,
-    // hdma.blocks: u8,
     emu_mode: EmulationMode,
     pub cgb_mode: CgbMode,
-    // pub new_hdma: bool,
     request_serial_int: bool,
 }
 
@@ -91,21 +86,36 @@ impl Mmu {
             joypad: Joypad::new(),
             apu: Apu::new(),
             ie: 0,
-            // hdma: HdmaType::NoHdma,
             hdma: Hdma::default(),
             oam_dma: OamDma::default(),
             timer: Timer::new(emu_mode.clone()),
             wram: Wram::new(),
             hram: [0; HRAM_SIZE],
             serial_out: 0,
-            // hdma.src: 0,
-            // hdma.dst: 0,
-            // hdma.blocks: 0,
             emu_mode,
             cgb_mode: CgbMode::new(),
-            // new_hdma: false,
             request_serial_int: false,
         }
+    }
+
+    pub fn simulate_bootrom(&mut self) {
+        match self.emu_mode {
+            EmulationMode::Dmg => {
+                self.set_byte(0xFF70, 0xFF);
+                self.set_byte(0xFF4F, 0xFF);
+                // self.set_byte(0xFF4D, 0xFF);
+            }
+            EmulationMode::Cgb => {
+                self.set_byte(0xFF70, 0xF8);
+                self.set_byte(0xFF4F, 0xFE);
+                // self.set_byte(0xFF4D, 0x7E);
+
+                self.set_byte(0xFF6C, 0xFE);
+                self.set_byte(0xFF75, 0x8F);
+            }
+        }
+        self.set_byte(0xFF00, 0xCF);
+        self.set_byte(0xFF0F, 0xE1);
     }
 
     pub fn in_hblank(&self) -> bool {
@@ -127,6 +137,31 @@ impl Mmu {
             self.hdma.hdma_type = HdmaType::NoHdma;
         }
         32
+    }
+
+    pub fn oam_dma_tick(&mut self, mut cycles: usize) {
+        if !self.oam_dma.active {
+            return;
+        }
+
+        if cycles >= 4 && self.oam_dma.just_launched {
+            self.oam_dma.just_launched = false;
+            cycles -= 4;
+        }
+
+        while cycles >= 4 {
+            cycles -= 4;
+
+            let offset = self.oam_dma.i;
+            let value = self.get_byte(self.oam_dma.src_addr + offset);
+            self.gpu.set_byte(0xFE00 + offset, value);
+
+            self.oam_dma.i += 1;
+            if self.oam_dma.i == 160 {
+                self.deactivate_oam_dma();
+                break;
+            }
+        }
     }
 
     fn hdma_transfer_block(&mut self) {
@@ -203,7 +238,7 @@ impl Mmu {
                 }
             },
             0xFF40..=0xFF45 => self.gpu.get_byte(addr),
-            0xFF46 => 0xFF,
+            0xFF46 => (self.oam_dma.src_addr >> 8) as u8,
             0xFF47..=0xFF4B => self.gpu.get_byte(addr),
             0xFF4C..=0xFF7F => match addr {
                 0xFF4D => u8::from(&self.cgb_mode),
@@ -266,7 +301,7 @@ impl Mmu {
                 _ => (),
             },
             0xFF40..=0xFF45 => self.gpu.set_byte(addr, value),
-            0xFF46 => self.launch_dma_transfer(value),
+            0xFF46 => self.activate_oam_dma(value),
             0xFF47..=0xFF4B => self.gpu.set_byte(addr, value),
             0xFF4C..=0xFF4E => match addr {
                 0xFF4D => {
@@ -312,13 +347,21 @@ impl Mmu {
         }
     }
 
-    fn launch_dma_transfer(&mut self, value: u8) {
-        // Temporary method, oam dma transfer will be completely redone later.
-        let addr = (value as u16) << 8;
-
-        for i in 0..0xA0 {
-            let data = self.get_byte(addr + i);
-            self.gpu.set_byte(0xFE00 + i as u16, data);
+    #[inline]
+    fn activate_oam_dma(&mut self, value: u8) {
+        self.oam_dma.active = true;
+        self.oam_dma.just_launched = true;
+        self.oam_dma.i = 0;
+        self.oam_dma.src_addr = (value as u16) << 8;
+        if self.emu_mode == EmulationMode::Dmg {
+            self.gpu.oam_dma_active = true;
         }
+    }
+
+    #[inline]
+    fn deactivate_oam_dma(&mut self) {
+        self.oam_dma.active = false;
+        self.gpu.oam_dma_active = false;
+        self.oam_dma.i = 0;
     }
 }

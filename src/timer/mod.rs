@@ -46,6 +46,7 @@ pub struct Timer {
     tima_bit: u16,
     state: TimerState,
     state_counter: usize,
+    emu_mode: EmulationMode,
 }
 
 impl Timer {
@@ -55,12 +56,17 @@ impl Timer {
             tma: 0,
             timer_enable: 0,
             freq: 0,
-            divider: Divider::new(mode),
+            divider: Divider::new(mode.clone()),
             request_timer_int: false,
             tima_bit: 9,
             state: TimerState::Running,
             state_counter: 0,
+            emu_mode: mode,
         }
+    }
+
+    pub fn simulate_bootrom(&mut self) {
+        self.set_byte(0xFF07, 0xF8);
     }
 
     pub fn tick(&mut self, cycles: usize) {

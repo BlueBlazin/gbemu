@@ -1,14 +1,12 @@
-const BOOTROM: [u8; 256] = [0; 256]; // Placeholder for actual boot rom data
-
 pub struct Bootrom {
-    pub bootrom: [u8; 256],
+    pub bootrom: Vec<u8>,
     pub is_active: bool,
 }
 
 impl Bootrom {
     pub fn new() -> Self {
         Bootrom {
-            bootrom: BOOTROM,
+            bootrom: vec![], // Placeholder for Boot ROM data
             is_active: false,
         }
     }

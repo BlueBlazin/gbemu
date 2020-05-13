@@ -66,6 +66,7 @@ pub struct Gpu {
     pub request_lcd_int: bool,
     vram_bank: usize,
     win_counter: usize,
+    pub oam_dma_active: bool,
 }
 
 impl Gpu {
@@ -94,6 +95,7 @@ impl Gpu {
             request_lcd_int: false,
             vram_bank: 0,
             win_counter: 0,
+            oam_dma_active: false,
         }
     }
 
@@ -103,6 +105,26 @@ impl Gpu {
 
     pub fn screen(&self) -> *const u8 {
         self.lcd.as_ptr()
+    }
+
+    pub fn simulate_bootrom(&mut self) {
+        // self.position.ly = 0x90;
+        match self.emu_mode {
+            EmulationMode::Dmg => {
+                self.set_byte(0xFF41, 0x85);
+                self.set_byte(0xFF46, 0xFF);
+                self.set_byte(0xFF47, 0xFC);
+                self.set_byte(0xFF48, 0xFF);
+                self.set_byte(0xFF49, 0xFF);
+            }
+            EmulationMode::Cgb => {
+                self.set_byte(0xFF41, 0x81);
+                self.set_byte(0xFF44, 0x90);
+                self.set_byte(0xFF47, 0xFC);
+            }
+        }
+
+        self.set_byte(0xFF40, 0x90);
     }
 
     fn draw_line(&mut self) {
@@ -564,11 +586,11 @@ impl Gpu {
     pub fn get_byte(&self, addr: u16) -> u8 {
         match addr {
             0x8000..=0x9FFF => match self.stat.mode {
-                GpuMode::PixelTransfer => 0x00,
+                GpuMode::PixelTransfer if !self.oam_dma_active => 0x00,
                 _ => self.get_vram_byte(addr, self.vram_bank),
             },
             0xFE00..=0xFE9F => match self.stat.mode {
-                GpuMode::OamSearch | GpuMode::PixelTransfer => 0x00,
+                GpuMode::OamSearch | GpuMode::PixelTransfer if !self.oam_dma_active => 0x00,
                 _ => self.oam[(addr - OAM_OFFSET) as usize],
             },
             0xFF40 => u8::from(&self.lcdc),

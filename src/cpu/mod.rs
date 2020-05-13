@@ -278,47 +278,42 @@ impl Cpu {
     #[allow(dead_code)]
     pub fn simulate_bootrom(&mut self) {
         match self.emu_mode {
-            EmulationMode::Dmg => self.set_r16(R16::AF, 0x01B0),
-            EmulationMode::Cgb => self.set_r16(R16::AF, 0x11B0),
+            EmulationMode::Dmg => {
+                // AF = 0x01B0
+                self.r[0] = 0x01;
+                self.r[1] = 0xB0;
+                // BC = 0x0013
+                self.r[2] = 0x00;
+                self.r[3] = 0x13;
+                // DE = 0x00D8
+                self.r[4] = 0x00;
+                self.r[5] = 0xD8;
+                // HL = 0x014D
+                self.r[6] = 0x01;
+                self.r[7] = 0x4D;
+            }
+            EmulationMode::Cgb => {
+                // AF = 0x1180;
+                self.r[0] = 0x11;
+                self.r[1] = 0x80;
+                // BC = 0x0000;
+                self.r[2] = 0x00;
+                self.r[3] = 0x00;
+                // DE = 0xFF56;
+                self.r[4] = 0xFF;
+                self.r[5] = 0x56;
+                // HL = 0x000D;
+                self.r[6] = 0x00;
+                self.r[7] = 0x0D;
+            }
         }
-        self.set_r16(R16::BC, 0x0013);
-        self.set_r16(R16::DE, 0x00D8);
-        self.set_r16(R16::HL, 0x014D);
-        self.set_r16(R16::SP, 0xFFFE);
 
-        self.mmu.set_byte(0xFF05, 0x00);
-        self.mmu.set_byte(0xFF06, 0x00);
-        self.mmu.set_byte(0xFF07, 0x00);
-        self.mmu.set_byte(0xFF10, 0x80);
-        self.mmu.set_byte(0xFF11, 0xBF);
-        self.mmu.set_byte(0xFF12, 0xF3);
-        self.mmu.set_byte(0xFF14, 0xBF);
-        self.mmu.set_byte(0xFF16, 0x3F);
-        self.mmu.set_byte(0xFF17, 0x00);
-        self.mmu.set_byte(0xFF19, 0xBF);
-        self.mmu.set_byte(0xFF1A, 0x7F);
-        self.mmu.set_byte(0xFF1B, 0xFF);
-        self.mmu.set_byte(0xFF1C, 0x9F);
-        self.mmu.set_byte(0xFF1E, 0xBF);
-        self.mmu.set_byte(0xFF20, 0xFF);
-        self.mmu.set_byte(0xFF21, 0x00);
-        self.mmu.set_byte(0xFF22, 0x00);
-        self.mmu.set_byte(0xFF23, 0xBF);
-        self.mmu.set_byte(0xFF24, 0x77);
-        self.mmu.set_byte(0xFF25, 0xF3);
-        self.mmu.set_byte(0xFF26, 0xF1);
+        self.sp = 0xFFFE;
 
-        self.mmu.set_byte(0xFF40, 0x91);
-        self.mmu.set_byte(0xFF41, 0x81);
-        self.mmu.set_byte(0xFF42, 0x00);
-        self.mmu.set_byte(0xFF43, 0x00);
-        self.mmu.set_byte(0xFF45, 0x00);
-        self.mmu.set_byte(0xFF47, 0xFC);
-        self.mmu.set_byte(0xFF48, 0xFF);
-        self.mmu.set_byte(0xFF49, 0xFF);
-        self.mmu.set_byte(0xFF4A, 0x00);
-        self.mmu.set_byte(0xFF4B, 0x00);
-        self.mmu.set_byte(0xFFFF, 0x00);
+        self.mmu.simulate_bootrom();
+        self.mmu.gpu.simulate_bootrom();
+        self.mmu.apu.simulate_bootrom();
+        self.mmu.timer.simulate_bootrom();
 
         self.pc = 0x100;
     }
@@ -762,8 +757,8 @@ impl Cpu {
     // -------------------------------------------------------------
 
     pub fn add_sp_imm(&mut self) {
-        self.add_cycles(4);
         let value = self.get_imm8() as i8 as u16;
+        self.add_cycles(4);
         let n = self.get_r16(&R16::SP);
         let res = n.wrapping_add(value);
         self.reset_flag(Flag::Z);
@@ -1172,6 +1167,11 @@ impl Cpu {
         // Step Timers
         self.mmu.timer_tick(cycles);
 
+        // OAM DMA
+        if !self.stopped && !self.halted {
+            self.mmu.oam_dma_tick(cycles);
+        }
+
         // Step GPU
         self.mmu.gpu_tick(speed_aware_cycles);
 
@@ -1301,6 +1301,7 @@ mod tests {
         // let rom = fs::read("roms/instr_timing.gb").unwrap();
         // let rom = fs::read("roms/acceptance/timer/tim00.gb").unwrap();
         let rom = fs::read("roms/interrupt_time.gb").unwrap();
+        // let rom = fs::read("roms/F-1 Race (World).gb").unwrap();
         println!("{:#X}", rom[0x147]);
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
