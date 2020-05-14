@@ -116,6 +116,7 @@ impl Mmu {
         }
         self.set_byte(0xFF00, 0xCF);
         self.set_byte(0xFF0F, 0xE1);
+        self.set_byte(0xFFFF, 0);
     }
 
     pub fn in_hblank(&self) -> bool {

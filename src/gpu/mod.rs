@@ -4,7 +4,6 @@ pub mod tiles;
 use crate::cpu::EmulationMode;
 use crate::gpu::registers::{ColorPalette, LcdControl, LcdPosition, LcdStatus, MonochromePalette};
 use crate::gpu::tiles::{BgAttr, Sprite};
-use std::mem;
 
 const VRAM_BANK_SIZE: usize = 0x2000;
 const OAM_SIZE: usize = 0xA0;
@@ -108,23 +107,27 @@ impl Gpu {
     }
 
     pub fn simulate_bootrom(&mut self) {
-        // self.position.ly = 0x90;
+        self.set_byte(0xFF40, 0x91);
+        self.set_byte(0xFF42, 0x00);
+        self.set_byte(0xFF43, 0x00);
+        self.set_byte(0xFF45, 0x00);
+        self.set_byte(0xFF47, 0xFC);
+        self.set_byte(0xFF48, 0xFF);
+        self.set_byte(0xFF49, 0xFF);
+
         match self.emu_mode {
             EmulationMode::Dmg => {
                 self.set_byte(0xFF41, 0x85);
-                self.set_byte(0xFF46, 0xFF);
-                self.set_byte(0xFF47, 0xFC);
-                self.set_byte(0xFF48, 0xFF);
-                self.set_byte(0xFF49, 0xFF);
             }
             EmulationMode::Cgb => {
                 self.set_byte(0xFF41, 0x81);
                 self.set_byte(0xFF44, 0x90);
-                self.set_byte(0xFF47, 0xFC);
             }
         }
 
-        self.set_byte(0xFF40, 0x90);
+        self.set_byte(0xFF4A, 0x00);
+        self.set_byte(0xFF4B, 0x00);
+        // self.set_byte(0xFF40, 0x90);
     }
 
     fn draw_line(&mut self) {

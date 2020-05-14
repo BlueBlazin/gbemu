@@ -46,7 +46,6 @@ pub struct Timer {
     tima_bit: u16,
     state: TimerState,
     state_counter: usize,
-    emu_mode: EmulationMode,
 }
 
 impl Timer {
@@ -56,17 +55,12 @@ impl Timer {
             tma: 0,
             timer_enable: 0,
             freq: 0,
-            divider: Divider::new(mode.clone()),
+            divider: Divider::new(mode),
             request_timer_int: false,
             tima_bit: 9,
             state: TimerState::Running,
             state_counter: 0,
-            emu_mode: mode,
         }
-    }
-
-    pub fn simulate_bootrom(&mut self) {
-        self.set_byte(0xFF07, 0xF8);
     }
 
     pub fn tick(&mut self, cycles: usize) {
@@ -112,13 +106,7 @@ impl Timer {
     pub fn get_byte(&self, addr: u16) -> u8 {
         match addr {
             0xFF04 => self.divider.get_byte(),
-            0xFF05 => {
-                // println!(
-                //     "TIMA read. TIMA: {}. Internal counter: {}",
-                //     self.counter, self.divider.counter
-                // );
-                self.counter
-            }
+            0xFF05 => self.counter,
             0xFF06 => self.tma,
             0xFF07 => self.timer_enable | self.freq,
             _ => 0x00,
@@ -130,18 +118,10 @@ impl Timer {
             0xFF04 => {
                 let old_signal = self.signal();
                 self.divider.set_byte();
-                // println!(
-                //     "DIV reset. TIMA: {}. Internal counter: {}. TMA: {}",
-                //     self.counter, self.divider.counter, self.tma
-                // );
                 self.detect_falling_edge(old_signal);
             }
-            0xFF05 if self.state != TimerState::Reloaded => {
+            0xFF05 if self.state == TimerState::Running => {
                 self.counter = value;
-                // println!(
-                //     "TIMA set. TIMA: {}. Internal counter: {}. TMA: {}",
-                //     self.counter, self.divider.counter, self.tma
-                // );
             }
             0xFF06 => {
                 self.tma = value;
@@ -149,19 +129,11 @@ impl Timer {
                     self.counter = value;
                     self.state = TimerState::Running;
                 }
-                // println!(
-                //     "TMA set. TIMA: {}. Internal counter: {}. TMA: {}",
-                //     self.counter, self.divider.counter, self.tma
-                // );
             }
             0xFF07 => {
                 self.timer_enable = value & 0x04;
                 self.freq = value & 0x03;
                 self.tima_bit = COUNTER_SHIFT[self.freq as usize];
-                // println!(
-                //     "TAC set. TIMA: {}. Internal counter: {}. TMA: {}",
-                //     self.counter, self.divider.counter, self.tma
-                // );
             }
             _ => (),
         }

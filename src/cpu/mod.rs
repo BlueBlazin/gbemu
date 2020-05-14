@@ -88,6 +88,8 @@ pub struct Cpu {
     halted: bool,
     emu_mode: EmulationMode,
     stopped: bool,
+    halt_bug: bool,
+    ei_pending: bool,
 }
 
 impl Cpu {
@@ -108,6 +110,8 @@ impl Cpu {
             halted: false,
             emu_mode,
             stopped: false,
+            halt_bug: false,
+            ei_pending: false,
         }
     }
 
@@ -153,7 +157,7 @@ impl Cpu {
     pub fn tick(&mut self) -> usize {
         self.cycles = 0;
 
-        if self.halted {
+        if self.halted || self.halt_bug {
             return self.halt_tick();
         }
         if self.stopped {
@@ -171,13 +175,27 @@ impl Cpu {
     fn cpu_tick(&mut self) {
         // Check if any interrupt is requested and service it.
         self.service_pending_interrupts();
+        if self.ei_pending {
+            self.ime = true;
+        }
         // Fetch - Decode - Execute
         let opcode = self.fetch();
         self.decode_exec(opcode);
     }
 
     fn halt_tick(&mut self) -> usize {
+        if self.halt_bug {
+            self.halt_bug = false;
+            self.add_cycles(4);
+            return self.cycles;
+        }
+
         self.service_pending_interrupts();
+
+        if self.ei_pending {
+            self.ime = true;
+        }
+
         self.add_cycles(4);
         self.cycles
     }
@@ -215,14 +233,17 @@ impl Cpu {
     fn service_pending_interrupts(&mut self) {
         let ie = self.mmu.get_byte(0xFFFF);
         let irr = self.mmu.get_byte(0xFF0F);
-        let ints = ie & irr & 0x1F;
 
-        if ints != 0 {
+        if (ie & irr & 0x1F) != 0 {
+            let was_halted = self.halted;
             if self.halted {
                 self.halted = false;
             }
 
             if self.ime {
+                if was_halted {
+                    self.add_cycles(4);
+                }
                 // -----------------------------------------------------------
                 // * Edge case
                 // -----------------------------------------------------------
@@ -275,8 +296,86 @@ impl Cpu {
         self.mmu.bootrom.activate();
     }
 
-    #[allow(dead_code)]
     pub fn simulate_bootrom(&mut self) {
+        // match self.emu_mode {
+        //     EmulationMode::Dmg => self.set_r16(R16::AF, 0x01B0),
+        //     EmulationMode::Cgb => self.set_r16(R16::AF, 0x11B0),
+        // }
+        // self.set_r16(R16::BC, 0x0013);
+        // self.set_r16(R16::DE, 0x00D8);
+        // self.set_r16(R16::HL, 0x014D);
+        // self.set_r16(R16::SP, 0xFFFE);
+        match self.emu_mode {
+            EmulationMode::Dmg => {
+                // AF = 0x01B0
+                self.r[0] = 0x01;
+                self.r[1] = 0xB0;
+                // BC = 0x0013
+                self.r[2] = 0x00;
+                self.r[3] = 0x13;
+                // DE = 0x00D8
+                self.r[4] = 0x00;
+                self.r[5] = 0xD8;
+                // HL = 0x014D
+                self.r[6] = 0x01;
+                self.r[7] = 0x4D;
+            }
+            EmulationMode::Cgb => {
+                // AF = 0x1180;
+                self.r[0] = 0x11;
+                self.r[1] = 0x80;
+                // BC = 0x0000;
+                self.r[2] = 0x00;
+                self.r[3] = 0x00;
+                // DE = 0xFF56;
+                self.r[4] = 0xFF;
+                self.r[5] = 0x56;
+                // HL = 0x000D;
+                self.r[6] = 0x00;
+                self.r[7] = 0x0D;
+            }
+        }
+
+        self.sp = 0xFFFE;
+
+        self.mmu.set_byte(0xFF05, 0x00);
+        self.mmu.set_byte(0xFF06, 0x00);
+        self.mmu.set_byte(0xFF07, 0x00);
+        self.mmu.set_byte(0xFF10, 0x80);
+        self.mmu.set_byte(0xFF11, 0xBF);
+        self.mmu.set_byte(0xFF12, 0xF3);
+        self.mmu.set_byte(0xFF14, 0xBF);
+        self.mmu.set_byte(0xFF16, 0x3F);
+        self.mmu.set_byte(0xFF17, 0x00);
+        self.mmu.set_byte(0xFF19, 0xBF);
+        self.mmu.set_byte(0xFF1A, 0x7F);
+        self.mmu.set_byte(0xFF1B, 0xFF);
+        self.mmu.set_byte(0xFF1C, 0x9F);
+        self.mmu.set_byte(0xFF1E, 0xBF);
+        self.mmu.set_byte(0xFF20, 0xFF);
+        self.mmu.set_byte(0xFF21, 0x00);
+        self.mmu.set_byte(0xFF22, 0x00);
+        self.mmu.set_byte(0xFF23, 0xBF);
+        self.mmu.set_byte(0xFF24, 0x77);
+        self.mmu.set_byte(0xFF25, 0xF3);
+        self.mmu.set_byte(0xFF26, 0xF1);
+
+        self.mmu.set_byte(0xFF40, 0x91);
+        self.mmu.set_byte(0xFF41, 0x81);
+        self.mmu.set_byte(0xFF42, 0x00);
+        self.mmu.set_byte(0xFF43, 0x00);
+        self.mmu.set_byte(0xFF45, 0x00);
+        self.mmu.set_byte(0xFF47, 0xFC);
+        self.mmu.set_byte(0xFF48, 0xFF);
+        self.mmu.set_byte(0xFF49, 0xFF);
+        self.mmu.set_byte(0xFF4A, 0x00);
+        self.mmu.set_byte(0xFF4B, 0x00);
+        self.mmu.set_byte(0xFFFF, 0x00);
+
+        self.pc = 0x100;
+    }
+
+    pub fn simulate_bootrom2(&mut self) {
         match self.emu_mode {
             EmulationMode::Dmg => {
                 // AF = 0x01B0
@@ -313,9 +412,8 @@ impl Cpu {
         self.mmu.simulate_bootrom();
         self.mmu.gpu.simulate_bootrom();
         self.mmu.apu.simulate_bootrom();
-        self.mmu.timer.simulate_bootrom();
 
-        self.pc = 0x100;
+        self.pc = 0x0100;
     }
 
     // -------------------------------------------------------------
@@ -648,7 +746,9 @@ impl Cpu {
 
     /// Enable interrupts.
     pub fn ei(&mut self) {
-        self.ime = true;
+        if !self.ime && !self.ei_pending {
+            self.ei_pending = true;
+        }
     }
 
     /// Disable inerrupts.
@@ -672,7 +772,15 @@ impl Cpu {
     }
 
     pub fn halt(&mut self) {
+        let ie = self.mmu.get_byte(0xFFFF);
+        let irr = self.mmu.get_byte(0xFF0F);
+        let ints = ie & irr & 0x1F;
+
         self.halted = true;
+        if !self.ime && ints != 0 {
+            self.halted = false;
+            self.halt_bug = true;
+        }
     }
 
     pub fn nop(&mut self) {}
@@ -1299,9 +1407,8 @@ mod tests {
     #[test]
     fn test_blargg() {
         // let rom = fs::read("roms/instr_timing.gb").unwrap();
-        // let rom = fs::read("roms/acceptance/timer/tim00.gb").unwrap();
+        // let rom = fs::read("roms/acceptance/ei_timing.gb").unwrap();
         let rom = fs::read("roms/interrupt_time.gb").unwrap();
-        // let rom = fs::read("roms/F-1 Race (World).gb").unwrap();
         println!("{:#X}", rom[0x147]);
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
@@ -1315,5 +1422,37 @@ mod tests {
             // );
             cpu.tick();
         }
+    }
+
+    fn print_and_step(cpu: &mut Cpu) {
+        println!(
+            "pc: {:#X}, opcode: {:#X}, halted: {}",
+            cpu.pc,
+            cpu.mmu.get_byte(cpu.pc),
+            cpu.halted
+        );
+        cpu.tick();
+    }
+
+    #[test]
+    fn test_steps() {
+        let rom = fs::read("roms/interrupt_time.gb").unwrap();
+        let mut cpu = Cpu::new(rom);
+        cpu.simulate_bootrom();
+        println!("Starting");
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
     }
 }

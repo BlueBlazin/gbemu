@@ -66,6 +66,24 @@ impl Apu {
     }
 
     pub fn simulate_bootrom(&mut self) {
+        self.set_byte(0xFF05, 0x00);
+        self.set_byte(0xFF06, 0x00);
+        self.set_byte(0xFF07, 0x00);
+        self.set_byte(0xFF10, 0x80);
+        self.set_byte(0xFF11, 0xBF);
+        self.set_byte(0xFF12, 0xF3);
+        self.set_byte(0xFF14, 0xBF);
+        self.set_byte(0xFF16, 0x3F);
+        self.set_byte(0xFF17, 0x00);
+        self.set_byte(0xFF19, 0xBF);
+        self.set_byte(0xFF1A, 0x7F);
+        self.set_byte(0xFF1B, 0xFF);
+        self.set_byte(0xFF1C, 0x9F);
+        self.set_byte(0xFF1E, 0xBF);
+        self.set_byte(0xFF20, 0xFF);
+        self.set_byte(0xFF21, 0x00);
+        self.set_byte(0xFF22, 0x00);
+        self.set_byte(0xFF23, 0xBF);
         self.set_byte(0xFF24, 0x77);
         self.set_byte(0xFF25, 0xF3);
         self.set_byte(0xFF26, 0xF1);
