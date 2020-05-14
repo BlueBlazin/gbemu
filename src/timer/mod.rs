@@ -121,6 +121,7 @@ impl Timer {
                 self.detect_falling_edge(old_signal);
             }
             0xFF05 if self.state == TimerState::Running => {
+                println!("Write TIMA");
                 self.counter = value;
             }
             0xFF06 => {
@@ -131,6 +132,7 @@ impl Timer {
                 }
             }
             0xFF07 => {
+                println!("Write TAC");
                 self.timer_enable = value & 0x04;
                 self.freq = value & 0x03;
                 self.tima_bit = COUNTER_SHIFT[self.freq as usize];

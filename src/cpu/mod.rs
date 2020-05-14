@@ -90,6 +90,7 @@ pub struct Cpu {
     stopped: bool,
     halt_bug: bool,
     ei_pending: bool,
+    ime_set_pending: bool,
 }
 
 impl Cpu {
@@ -112,6 +113,7 @@ impl Cpu {
             stopped: false,
             halt_bug: false,
             ei_pending: false,
+            ime_set_pending: false,
         }
     }
 
@@ -157,9 +159,17 @@ impl Cpu {
     pub fn tick(&mut self) -> usize {
         self.cycles = 0;
 
-        if self.halted || self.halt_bug {
+        if self.halt_bug {
+            self.halt_bug = false;
+            self.service_pending_interrupts();
+            self.fetch();
+            self.pc -= 1;
+        }
+
+        if self.halted {
             return self.halt_tick();
         }
+
         if self.stopped {
             return self.stop_tick();
         }
@@ -169,34 +179,47 @@ impl Cpu {
             HdmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
             _ => self.cpu_tick(),
         }
+
         self.cycles
     }
 
     fn cpu_tick(&mut self) {
         // Check if any interrupt is requested and service it.
-        self.service_pending_interrupts();
         if self.ei_pending {
-            self.ime = true;
+            self.ei_pending = false;
+            self.ime_set_pending = true;
+        } else {
+            self.service_pending_interrupts();
         }
         // Fetch - Decode - Execute
         let opcode = self.fetch();
         self.decode_exec(opcode);
+
+        if self.ime_set_pending {
+            self.ime_set_pending = false;
+            self.ime = true;
+        }
     }
 
     fn halt_tick(&mut self) -> usize {
-        if self.halt_bug {
-            self.halt_bug = false;
-            self.add_cycles(4);
-            return self.cycles;
+        let ie = self.mmu.get_byte(0xFFFF);
+        let irr = self.mmu.get_byte(0xFF0F);
+        let ints_pending = ie & irr & 0x1F;
+
+        if self.ime {
+            if ints_pending != 0 {
+                self.service_pending_interrupts();
+            } else {
+                self.add_cycles(4);
+            }
+        } else {
+            if ints_pending != 0 {
+                self.halted = false;
+                self.add_cycles(4);
+            } else {
+                self.add_cycles(4);
+            }
         }
-
-        self.service_pending_interrupts();
-
-        if self.ei_pending {
-            self.ime = true;
-        }
-
-        self.add_cycles(4);
         self.cycles
     }
 
@@ -233,50 +256,93 @@ impl Cpu {
     fn service_pending_interrupts(&mut self) {
         let ie = self.mmu.get_byte(0xFFFF);
         let irr = self.mmu.get_byte(0xFF0F);
+        let mut ints = ie & irr & 0x1F;
 
-        if (ie & irr & 0x1F) != 0 {
-            let was_halted = self.halted;
+        if self.ime && ints != 0 {
             if self.halted {
+                // HALT behavior 1 -- IME set
                 self.halted = false;
+                self.add_cycles(4);
             }
 
-            if self.ime {
-                if was_halted {
-                    self.add_cycles(4);
-                }
-                // -----------------------------------------------------------
-                // * Edge case
-                // -----------------------------------------------------------
-                self.sp = self.sp.wrapping_sub(1);
-                self.mmu.set_byte(self.sp, (self.pc >> 8) as u8);
-                let mut ints = self.mmu.get_byte(0xFFFF) & irr & 0x1F;
-                self.sp = self.sp.wrapping_sub(1);
-                self.mmu.set_byte(self.sp, (self.pc & 0xFF) as u8);
-                // If SP was IF, pushing lower byte of PC modified IF.
-                ints &= if self.sp == 0xFF0F {
-                    irr & 0x1F
-                } else {
-                    self.mmu.get_byte(0xFF0F) & 0x1F
-                };
+            // -----------------------------------------------------------
+            // * Edge case
+            // -----------------------------------------------------------
+            self.sp = self.sp.wrapping_sub(1);
+            self.mmu.set_byte(self.sp, (self.pc >> 8) as u8);
+            ints = self.mmu.get_byte(0xFFFF) & irr & 0x1F;
+            self.sp = self.sp.wrapping_sub(1);
+            self.mmu.set_byte(self.sp, (self.pc & 0xFF) as u8);
+            // If SP was IF, pushing lower byte of PC modified IF.
+            ints &= if self.sp == 0xFF0F {
+                irr & 0x1F
+            } else {
+                self.mmu.get_byte(0xFF0F) & 0x1F
+            };
 
-                // -----------------------------------------------------------
+            // -----------------------------------------------------------
 
-                if ints == 0 {
-                    self.pc = 0x0000;
-                    return;
-                }
+            if ints == 0 {
+                self.pc = 0x0000;
+                return;
+            }
 
-                for i in 0..5 {
-                    if ints & (1u8 << i) != 0 {
-                        println!("INT FIRED: {:#X}", 1u8 << i);
-                        return self.dispatch_interrupt(irr, i);
-                    }
+            for i in 0..5 {
+                if ints & (1u8 << i) != 0 {
+                    println!("INT FIRED: {:#X}", 1u8 << i);
+                    return self.handle_interrupt(irr, i);
                 }
             }
         }
     }
 
-    fn dispatch_interrupt(&mut self, irr: u8, i: u16) {
+    // fn service_pending_interrupts2(&mut self) {
+    //     let ie = self.mmu.get_byte(0xFFFF);
+    //     let irr = self.mmu.get_byte(0xFF0F);
+
+    //     if (ie & irr & 0x1F) != 0 {
+    //         let was_halted = self.halted;
+    //         if self.halted {
+    //             self.halted = false;
+    //         }
+
+    //         if self.ime {
+    //             if was_halted {
+    //                 self.add_cycles(4);
+    //             }
+    //             // -----------------------------------------------------------
+    //             // * Edge case
+    //             // -----------------------------------------------------------
+    //             self.sp = self.sp.wrapping_sub(1);
+    //             self.mmu.set_byte(self.sp, (self.pc >> 8) as u8);
+    //             let mut ints = self.mmu.get_byte(0xFFFF) & irr & 0x1F;
+    //             self.sp = self.sp.wrapping_sub(1);
+    //             self.mmu.set_byte(self.sp, (self.pc & 0xFF) as u8);
+    //             // If SP was IF, pushing lower byte of PC modified IF.
+    //             ints &= if self.sp == 0xFF0F {
+    //                 irr & 0x1F
+    //             } else {
+    //                 self.mmu.get_byte(0xFF0F) & 0x1F
+    //             };
+
+    //             // -----------------------------------------------------------
+
+    //             if ints == 0 {
+    //                 self.pc = 0x0000;
+    //                 return;
+    //             }
+
+    //             for i in 0..5 {
+    //                 if ints & (1u8 << i) != 0 {
+    //                     println!("INT FIRED: {:#X}", 1u8 << i);
+    //                     return self.handle_interrupt(irr, i);
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
+    fn handle_interrupt(&mut self, irr: u8, i: u16) {
         let mask = 1u8 << i;
         self.ime = false;
         self.mmu.set_byte(0xFF0F, irr & !mask);
@@ -772,16 +838,34 @@ impl Cpu {
     }
 
     pub fn halt(&mut self) {
-        let ie = self.mmu.get_byte(0xFFFF);
-        let irr = self.mmu.get_byte(0xFF0F);
-        let ints = ie & irr & 0x1F;
+        if self.ime {
+            // HALT behavior 1 -- IME set
+            self.halted = true;
+        } else {
+            let ie = self.mmu.get_byte(0xFFFF);
+            let irr = self.mmu.get_byte(0xFF0F);
 
-        self.halted = true;
-        if !self.ime && ints != 0 {
-            self.halted = false;
-            self.halt_bug = true;
+            if (ie & irr & 0x1F) == 0 {
+                // HALT behavior 2 -- iME = 0, (IE & IF & 0x1F) = 0
+                self.halted = true;
+            } else {
+                // HALT behavior 3 -- iME = 0, (IE & IF & 0x1F) != 0
+                self.halt_bug = true;
+            }
         }
     }
+
+    // pub fn halt(&mut self) {
+    //     let ie = self.mmu.get_byte(0xFFFF);
+    //     let irr = self.mmu.get_byte(0xFF0F);
+    //     let ints = ie & irr & 0x1F;
+
+    //     self.halted = true;
+    //     if !self.ime && ints != 0 {
+    //         self.halted = false;
+    //         self.halt_bug = true;
+    //     }
+    // }
 
     pub fn nop(&mut self) {}
 
