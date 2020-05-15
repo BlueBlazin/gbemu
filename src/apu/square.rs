@@ -100,13 +100,11 @@ impl Default for LengthCounter {
 pub struct SquareWave {
     pub output_volume: u8,
     registers: AudioRegisters,
-    // timing
     timer: Timer,
-    // modulation units
     sweep: Sweep,
     length: LengthCounter,
     volume: VolumeEnvelope,
-    enabled: bool,
+    pub enabled: bool,
     dac_enabled: bool,
 }
 
@@ -186,6 +184,8 @@ impl SquareWave {
             self.length.counter -= 1;
             if self.length.counter == 0 {
                 self.enabled = false;
+                self.length.enabled = false;
+                self.registers.nrx4 &= !0x40;
             }
         }
     }
@@ -256,10 +256,10 @@ impl SquareWave {
 
     pub fn restart(&mut self) {
         self.enabled = true;
+
         if self.length.counter == 0 {
             self.length.counter = 64;
         }
-
         // During a trigger event, several things occur:
         //     Square 1's frequency is copied to the shadow register.
         //     The sweep timer is reloaded.

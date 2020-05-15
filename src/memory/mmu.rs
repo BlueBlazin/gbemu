@@ -296,7 +296,6 @@ impl Mmu {
                     self.gpu.request_lcd_int = (value & 0x02) != 0;
                     self.timer.request_timer_int = (value & 0x04) != 0;
                     self.request_serial_int = (value & 0x08) != 0;
-                    println!("write IF: {:#X}", value);
                 }
                 0xFF10..=0xFF3F => self.apu.set_byte(addr, value),
                 _ => (),
@@ -341,10 +340,7 @@ impl Mmu {
             // FF80-FFFE   High RAM (HRAM)
             0xFF80..=0xFFFE => self.hram[(addr - HRAM_OFFSET) as usize] = value,
             // FFFF        Interrupt Enable Register
-            0xFFFF => {
-                println!("write IE: {:#X}", value);
-                self.ie = value
-            }
+            0xFFFF => self.ie = value,
         }
     }
 

@@ -71,6 +71,7 @@ pub enum Addr {
     SP,
 }
 
+#[derive(PartialEq)]
 pub enum Flag {
     Z,
     N,
@@ -268,6 +269,7 @@ impl Cpu {
             // -----------------------------------------------------------
             // * Edge case
             // -----------------------------------------------------------
+
             self.sp = self.sp.wrapping_sub(1);
             self.mmu.set_byte(self.sp, (self.pc >> 8) as u8);
             ints = self.mmu.get_byte(0xFFFF) & irr & 0x1F;
@@ -280,74 +282,30 @@ impl Cpu {
                 self.mmu.get_byte(0xFF0F) & 0x1F
             };
 
-            // -----------------------------------------------------------
-
             if ints == 0 {
                 self.pc = 0x0000;
                 return;
             }
 
+            // -----------------------------------------------------------
+
             for i in 0..5 {
                 if ints & (1u8 << i) != 0 {
-                    println!("INT FIRED: {:#X}", 1u8 << i);
                     return self.handle_interrupt(irr, i);
                 }
             }
         }
     }
 
-    // fn service_pending_interrupts2(&mut self) {
-    //     let ie = self.mmu.get_byte(0xFFFF);
-    //     let irr = self.mmu.get_byte(0xFF0F);
-
-    //     if (ie & irr & 0x1F) != 0 {
-    //         let was_halted = self.halted;
-    //         if self.halted {
-    //             self.halted = false;
-    //         }
-
-    //         if self.ime {
-    //             if was_halted {
-    //                 self.add_cycles(4);
-    //             }
-    //             // -----------------------------------------------------------
-    //             // * Edge case
-    //             // -----------------------------------------------------------
-    //             self.sp = self.sp.wrapping_sub(1);
-    //             self.mmu.set_byte(self.sp, (self.pc >> 8) as u8);
-    //             let mut ints = self.mmu.get_byte(0xFFFF) & irr & 0x1F;
-    //             self.sp = self.sp.wrapping_sub(1);
-    //             self.mmu.set_byte(self.sp, (self.pc & 0xFF) as u8);
-    //             // If SP was IF, pushing lower byte of PC modified IF.
-    //             ints &= if self.sp == 0xFF0F {
-    //                 irr & 0x1F
-    //             } else {
-    //                 self.mmu.get_byte(0xFF0F) & 0x1F
-    //             };
-
-    //             // -----------------------------------------------------------
-
-    //             if ints == 0 {
-    //                 self.pc = 0x0000;
-    //                 return;
-    //             }
-
-    //             for i in 0..5 {
-    //                 if ints & (1u8 << i) != 0 {
-    //                     println!("INT FIRED: {:#X}", 1u8 << i);
-    //                     return self.handle_interrupt(irr, i);
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
     fn handle_interrupt(&mut self, irr: u8, i: u16) {
         let mask = 1u8 << i;
         self.ime = false;
         self.mmu.set_byte(0xFF0F, irr & !mask);
         self.pc = 0x40 + 8 * i;
-        self.add_cycles(20);
+        match self.mmu.cgb_mode.speed {
+            CgbSpeed::Normal => self.add_cycles(20),
+            CgbSpeed::Double => self.add_cycles(40),
+        }
     }
 
     fn leave_stop_mode(&mut self) {
@@ -508,7 +466,7 @@ impl Cpu {
     }
 
     pub fn reti(&mut self) {
-        self.ei();
+        self.ime = true;
         self.ret();
     }
 
@@ -566,8 +524,8 @@ impl Cpu {
 
     pub fn jr_cc_n(&mut self, flag: Flag, set: bool) {
         let n = self.get_imm8();
-        let addr = self.pc.wrapping_add(n as i8 as i16 as u16);
         if self.get_flag(flag) == set as u8 {
+            let addr = self.pc.wrapping_add(n as i8 as i16 as u16);
             self.jp_addr(addr);
         }
     }
@@ -819,7 +777,6 @@ impl Cpu {
 
     /// Disable inerrupts.
     pub fn di(&mut self) {
-        println!("DI");
         self.ime = false;
     }
 
@@ -1174,7 +1131,7 @@ impl Cpu {
                 let ls = self.pop();
                 let ms = self.pop();
                 self.r[0] = ms;
-                self.r[1] = ls & 0xF0;
+                self.r[1] = ls;
             }
             R16::BC => {
                 let ls = self.pop();
@@ -1205,7 +1162,7 @@ impl Cpu {
                 let ms = self.get_r8(&R8::A) as u8;
                 let ls = self.get_r8(&R8::F) as u8;
                 self.push(ms);
-                self.push(ls);
+                self.push(ls & 0xF0);
             }
             R16::BC => {
                 let ms = self.get_r8(&R8::B);
@@ -1499,10 +1456,11 @@ mod tests {
         println!("Starting");
         loop {
             // println!(
-            //     "pc: {:#X}, opcode: {:#X}, halted: {}",
+            //     "pc: {:#X}, opcode: {:#X}, HL: {:#X}, A: {:#X}",
             //     cpu.pc,
             //     cpu.mmu.get_byte(cpu.pc),
-            //     cpu.halted
+            //     cpu.mmu.get_byte(cpu.get_r16(&R16::HL)),
+            //     cpu.get_r8(&R8::A),
             // );
             cpu.tick();
         }
@@ -1524,6 +1482,15 @@ mod tests {
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         println!("Starting");
+        while cpu.pc != 0xC9C7 {
+            cpu.tick();
+        }
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
+        print_and_step(&mut cpu);
         print_and_step(&mut cpu);
         print_and_step(&mut cpu);
         print_and_step(&mut cpu);

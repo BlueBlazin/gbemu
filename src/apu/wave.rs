@@ -63,6 +63,7 @@ impl WaveChannel {
             if self.length_counter == 0 {
                 self.enabled = false;
                 self.length_enabled = false;
+                self.registers.nrx4 &= !0x40;
             }
         }
     }

@@ -14,7 +14,7 @@ pub struct Noise {
     width_mode: u8,
     lfsr: u16,
     pub output_volume: u8,
-    enabled: bool,
+    pub enabled: bool,
     length_counter: usize,
 }
 
@@ -90,6 +90,7 @@ impl Noise {
             if self.length_counter == 0 {
                 self.enabled = false;
                 self.length_enabled = false;
+                self.registers.nrx4 &= !0x40;
             }
         }
     }

@@ -45,6 +45,7 @@ pub struct Apu {
     master_on: bool,
     master_vol_left: f32,
     master_vol_right: f32,
+    nr51: u8,
 }
 
 impl Apu {
@@ -62,6 +63,7 @@ impl Apu {
             master_on: false,
             master_vol_left: 1.0,
             master_vol_right: 1.0,
+            nr51: 0,
         }
     }
 
@@ -150,45 +152,74 @@ impl Apu {
 
     fn audio_out_left(&mut self) -> f32 {
         let gain = (self.master_on as u8 as f32) * self.master_vol_left;
-        let total_amp =
-            (self.channel1.dac() + self.channel2.dac() + self.channel3.dac() + self.channel4.dac())
-                * gain;
-        total_amp / 4.0
+        let tot_amp = self.total_amp() * gain;
+        tot_amp / 4.0
+    }
+
+    fn audio_out_right(&mut self) -> f32 {
+        let gain = (self.master_on as u8 as f32) * self.master_vol_right;
+        let tot_amp = self.total_amp() * gain;
+        tot_amp / 4.0
+    }
+
+    fn total_amp(&self) -> f32 {
+        let mut tot_amp = 0.0;
+        if self.channel1.enabled {
+            tot_amp += self.channel1.dac();
+        }
+        if self.channel2.enabled {
+            tot_amp += self.channel2.dac();
+        }
+        if self.channel3.enabled {
+            tot_amp += self.channel3.dac();
+        }
+        if self.channel4.enabled {
+            tot_amp += self.channel4.dac();
+        }
+        tot_amp
     }
 
     pub fn get_byte(&mut self, addr: u16) -> u8 {
         match addr {
             0xFF10..=0xFF14 => self.channel1.get_byte(addr),
-            0xFF16..=0xFF19 => self.channel2.get_byte(addr),
+            0xFF15..=0xFF19 => self.channel2.get_byte(addr),
             0xFF1A..=0xFF1E => self.channel3.get_byte(addr),
             0xFF1F..=0xFF23 => self.channel4.get_byte(addr),
-            0xFF26 => 0xFF,
+            0xFF25 => self.nr51,
+            0xFF26 => {
+                (self.master_on as u8) << 7
+                    | (self.channel4.enabled as u8) << 3
+                    | (self.channel3.enabled as u8) << 2
+                    | (self.channel2.enabled as u8) << 1
+                    | (self.channel1.enabled as u8)
+            }
             0xFF30..=0xFF3F => self.channel3.get_byte(addr),
-            _ => 0x00,
+            _ => panic!("Unhandled APU register get {:#X}", addr),
         }
     }
 
     pub fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
             0xFF10..=0xFF14 => self.channel1.set_byte(addr, value),
-            0xFF16..=0xFF19 => self.channel2.set_byte(addr, value),
+            0xFF15..=0xFF19 => self.channel2.set_byte(addr, value),
             0xFF1A..=0xFF1E => self.channel3.set_byte(addr, value),
             0xFF1F..=0xFF23 => self.channel4.set_byte(addr, value),
             0xFF24 => {
                 self.master_vol_left = (((value & 0x70) >> 4) as f32) / 7.0;
                 self.master_vol_right = ((value & 0x7) as f32) / 7.0;
             }
+            0xFF25 => self.nr51 = value,
             0xFF26 => {
                 self.master_on = (value & 0x80) != 0;
                 if !self.master_on {
-                    self.channel1.restart();
-                    self.channel2.restart();
-                    self.channel3.restart();
-                    self.channel4.restart();
+                    self.channel1.enabled = false;
+                    self.channel2.enabled = false;
+                    self.channel3.enabled = false;
+                    self.channel4.enabled = false;
                 }
             }
             0xFF30..=0xFF3F => self.channel3.set_byte(addr, value),
-            _ => (),
+            _ => panic!("Unhandled APU register set {:#X}", addr),
         }
     }
 
