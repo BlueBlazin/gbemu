@@ -231,7 +231,7 @@ impl SquareWave {
             0xFF11 | 0xFF16 => {
                 self.registers.nrx1 = value;
                 self.timer.duty = ((value & 0xC0) >> 6) as usize;
-                self.length.counter = (value & 0x3F) as usize;
+                self.length.counter = 64 - (value & 0x3F) as usize;
             }
             0xFF12 | 0xFF17 => {
                 self.registers.nrx2 = value;

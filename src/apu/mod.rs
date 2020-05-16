@@ -69,30 +69,6 @@ impl Apu {
         }
     }
 
-    pub fn simulate_bootrom(&mut self) {
-        self.set_byte(0xFF05, 0x00);
-        self.set_byte(0xFF06, 0x00);
-        self.set_byte(0xFF07, 0x00);
-        self.set_byte(0xFF10, 0x80);
-        self.set_byte(0xFF11, 0xBF);
-        self.set_byte(0xFF12, 0xF3);
-        self.set_byte(0xFF14, 0xBF);
-        self.set_byte(0xFF16, 0x3F);
-        self.set_byte(0xFF17, 0x00);
-        self.set_byte(0xFF19, 0xBF);
-        self.set_byte(0xFF1A, 0x7F);
-        self.set_byte(0xFF1B, 0xFF);
-        self.set_byte(0xFF1C, 0x9F);
-        self.set_byte(0xFF1E, 0xBF);
-        self.set_byte(0xFF20, 0xFF);
-        self.set_byte(0xFF21, 0x00);
-        self.set_byte(0xFF22, 0x00);
-        self.set_byte(0xFF23, 0xBF);
-        self.set_byte(0xFF24, 0x77);
-        self.set_byte(0xFF25, 0xF3);
-        self.set_byte(0xFF26, 0xF1);
-    }
-
     pub fn tick(&mut self, cycles: usize) {
         for _ in 0..cycles {
             self.clocks += 1;
@@ -145,7 +121,7 @@ impl Apu {
             if self.sample_clocks >= SAMPLE_RATE {
                 self.sample_clocks -= SAMPLE_RATE;
                 let left = self.audio_out_left();
-                let right = self.audio_out_left();
+                let right = self.audio_out_right();
                 self.samples.push(left, right);
                 self.i += 1;
             }
@@ -154,28 +130,28 @@ impl Apu {
 
     fn audio_out_left(&mut self) -> f32 {
         let gain = (self.master_on as u8 as f32) * self.master_vol_left;
-        let tot_amp = self.total_amp() * gain;
+        let tot_amp = self.total_amp(self.nr51 >> 4) * gain;
         tot_amp / 4.0
     }
 
     fn audio_out_right(&mut self) -> f32 {
         let gain = (self.master_on as u8 as f32) * self.master_vol_right;
-        let tot_amp = self.total_amp() * gain;
+        let tot_amp = self.total_amp(self.nr51) * gain;
         tot_amp / 4.0
     }
 
-    fn total_amp(&self) -> f32 {
+    fn total_amp(&self, nr51: u8) -> f32 {
         let mut tot_amp = 0.0;
-        if self.channel1.enabled {
+        if self.channel1.enabled && (nr51 & 0x1) != 0 {
             tot_amp += self.channel1.dac();
         }
-        if self.channel2.enabled {
+        if self.channel2.enabled && (nr51 & 0x2) != 0 {
             tot_amp += self.channel2.dac();
         }
-        if self.channel3.enabled {
+        if self.channel3.enabled && (nr51 & 0x4) != 0 {
             tot_amp += self.channel3.dac();
         }
-        if self.channel4.enabled {
+        if self.channel4.enabled && (nr51 & 0x8) != 0 {
             tot_amp += self.channel4.dac();
         }
         tot_amp
@@ -209,7 +185,7 @@ impl Apu {
             0xFF1F..=0xFF23 => self.channel4.set_byte(addr, value),
             0xFF24 => {
                 self.master_vol_left = (((value & 0x70) >> 4) as f32) / 7.0;
-                self.master_vol_right = ((value & 0x7) as f32) / 7.0;
+                self.master_vol_right = ((value & 0x07) as f32) / 7.0;
                 self.nr50 = value;
             }
             0xFF25 => self.nr51 = value,

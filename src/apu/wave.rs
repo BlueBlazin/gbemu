@@ -117,7 +117,9 @@ impl WaveChannel {
 
     pub fn restart(&mut self) {
         self.enabled = true;
-        self.length_counter = 256;
+        if self.length_counter == 0 {
+            self.length_counter = 256;
+        }
         self.i = 0;
         self.clock = 0;
         self.length_counter = self.length_load;

@@ -11,7 +11,7 @@ pub enum EmulationMode {
     Cgb,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CgbSpeed {
     Normal,
     Double,
@@ -236,10 +236,7 @@ impl Cpu {
     fn gdma_tick(&mut self) {
         self.cycles += 4;
         let cycles = self.mmu.gdma_tick();
-        self.add_cycles(match self.mmu.cgb_mode.speed {
-            CgbSpeed::Normal => cycles,
-            CgbSpeed::Double => cycles * 2,
-        });
+        self.add_cycles(cycles);
     }
 
     fn hdma_tick(&mut self) {
@@ -248,10 +245,7 @@ impl Cpu {
             self.cycles += 4;
         }
         let cycles = self.mmu.hdma_tick();
-        self.add_cycles(match self.mmu.cgb_mode.speed {
-            CgbSpeed::Normal => cycles,
-            CgbSpeed::Double => cycles * 2,
-        });
+        self.add_cycles(cycles);
     }
 
     fn service_pending_interrupts(&mut self) {
@@ -302,10 +296,9 @@ impl Cpu {
         self.ime = false;
         self.mmu.set_byte(0xFF0F, irr & !mask);
         self.pc = 0x40 + 8 * i;
-        match self.mmu.cgb_mode.speed {
-            CgbSpeed::Normal => self.add_cycles(20),
-            CgbSpeed::Double => self.add_cycles(40),
-        }
+
+        let old_mode = self.mmu.cgb_mode.speed.clone();
+        self.add_cycles(20);
     }
 
     fn leave_stop_mode(&mut self) {
@@ -1265,27 +1258,57 @@ impl Cpu {
     // -------------------------------------------------------------
 
     fn add_cycles(&mut self, cycles: usize) {
-        let speed_aware_cycles = match self.mmu.cgb_mode.speed {
-            CgbSpeed::Normal => cycles,
-            CgbSpeed::Double => cycles >> 1,
-        };
+        //     In Double Speed Mode the following will operate twice as fast as normal:
+        //     The CPU (2.10 MHz, 1 Cycle = approx. 0.5us)
+        //     Timer and Divider Registers
+        //     DMA Transfer to OAM
 
-        self.cycles += speed_aware_cycles;
+        //    And the following will keep operating as usual:
+        //    LCD Video Controller
+        //    HDMA Transfer to VRAM
+        //    All Sound Timings and Frequencies
+        self.cycles += cycles;
 
-        // Step Timers
-        self.mmu.timer_tick(speed_aware_cycles);
+        self.mmu.timer_tick(cycles);
 
-        // OAM DMA
         if !self.stopped && !self.halted {
-            self.mmu.oam_dma_tick(speed_aware_cycles);
+            self.mmu.oam_dma_tick(cycles);
         }
 
-        // Step GPU
-        self.mmu.gpu_tick(cycles);
-
-        // Step APU
-        self.mmu.apu_tick(cycles);
+        match self.mmu.cgb_mode.speed {
+            CgbSpeed::Normal => {
+                self.mmu.gpu_tick(cycles);
+                self.mmu.apu_tick(cycles);
+            }
+            CgbSpeed::Double => {
+                self.mmu.gpu_tick(cycles >> 1);
+                self.mmu.apu_tick(cycles >> 1);
+            }
+        }
     }
+
+    // fn add_cycles(&mut self, cycles: usize) {
+    //     let speed_aware_cycles = match self.mmu.cgb_mode.speed {
+    //         CgbSpeed::Normal => cycles,
+    //         CgbSpeed::Double => cycles >> 1,
+    //     };
+
+    //     self.cycles += speed_aware_cycles;
+
+    //     // Step Timers
+    //     self.mmu.timer_tick(speed_aware_cycles);
+
+    //     // OAM DMA
+    //     if !self.stopped && !self.halted {
+    //         self.mmu.oam_dma_tick(speed_aware_cycles);
+    //     }
+
+    //     // Step GPU
+    //     self.mmu.gpu_tick(cycles);
+
+    //     // Step APU
+    //     self.mmu.apu_tick(cycles);
+    // }
 
     // fn add_cycles(&mut self, cycles: usize) {
     //     let speed_aware_cycles = match self.mmu.cgb_mode.speed {
@@ -1431,8 +1454,8 @@ mod tests {
     fn test_blargg() {
         // let rom = fs::read("roms/instr_timing.gb").unwrap();
         // let rom = fs::read("roms/acceptance/ei_timing.gb").unwrap();
-        // let rom = fs::read("roms/interrupt_time.gb").unwrap();
-        let rom = fs::read("roms/Aladdin (USA).gbc").unwrap();
+        let rom = fs::read("roms/interrupt_time.gb").unwrap();
+        // let rom = fs::read("roms/Aladdin (USA).gbc").unwrap();
         println!("{:#X}", rom[0x147]);
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
@@ -1445,7 +1468,7 @@ mod tests {
             //     cpu.mmu.get_byte(cpu.get_r16(&R16::HL)),
             //     cpu.get_r8(&R8::A),
             // );
-            // println!("speed: {:?}", cpu.mmu.cgb_mode.speed);
+            println!("speed: {:?}", cpu.mmu.cgb_mode.speed);
             cpu.tick();
         }
     }
