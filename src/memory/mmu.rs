@@ -232,7 +232,9 @@ impl Mmu {
                         | (self.gpu.request_lcd_int as u8) << 1
                         | (self.gpu.request_vblank_int as u8)
                 }
-                0xFF10..=0xFF3F => self.apu.get_byte(addr),
+                0xFF10..=0xFF1E => self.apu.get_byte(addr),
+                0xFF20..=0xFF26 => self.apu.get_byte(addr),
+                0xFF30..=0xFF3F => self.apu.get_byte(addr),
                 _ => {
                     println!("Reading from io ports {:#X}", addr);
                     0x00
@@ -242,7 +244,10 @@ impl Mmu {
             0xFF46 => (self.oam_dma.src_addr >> 8) as u8,
             0xFF47..=0xFF4B => self.gpu.get_byte(addr),
             0xFF4C..=0xFF7F => match addr {
-                0xFF4D => u8::from(&self.cgb_mode),
+                0xFF4D => match self.emu_mode {
+                    EmulationMode::Dmg => 0xFF,
+                    EmulationMode::Cgb => u8::from(&self.cgb_mode),
+                },
                 0xFF4F => self.gpu.get_byte(addr),
                 0xFF51..=0xFF54 => 0xFF,
                 0xFF55 => match self.hdma.hdma_type {
@@ -297,7 +302,9 @@ impl Mmu {
                     self.timer.request_timer_int = (value & 0x04) != 0;
                     self.request_serial_int = (value & 0x08) != 0;
                 }
-                0xFF10..=0xFF3F => self.apu.set_byte(addr, value),
+                0xFF10..=0xFF1E => self.apu.set_byte(addr, value),
+                0xFF20..=0xFF26 => self.apu.set_byte(addr, value),
+                0xFF30..=0xFF3F => self.apu.set_byte(addr, value),
                 _ => (),
             },
             0xFF40..=0xFF45 => self.gpu.set_byte(addr, value),

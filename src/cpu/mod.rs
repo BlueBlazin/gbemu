@@ -35,8 +35,8 @@ impl CgbMode {
 impl From<&CgbMode> for u8 {
     fn from(value: &CgbMode) -> Self {
         match value.speed {
-            CgbSpeed::Normal => 0x0,
-            CgbSpeed::Double => (0x1 << 7) | value.prepare_speed_switch,
+            CgbSpeed::Normal => value.prepare_speed_switch & 0x7F | 0x7E,
+            CgbSpeed::Double => value.prepare_speed_switch & 0x7F | 0xFE,
         }
     }
 }
@@ -309,10 +309,11 @@ impl Cpu {
     }
 
     fn leave_stop_mode(&mut self) {
-        self.stopped = false;
         for _ in 0..0x200 {
             self.add_cycles(0x10);
         }
+
+        self.stopped = false;
     }
 
     #[allow(dead_code)]
@@ -397,47 +398,6 @@ impl Cpu {
         self.mmu.set_byte(0xFFFF, 0x00);
 
         self.pc = 0x100;
-    }
-
-    pub fn simulate_bootrom2(&mut self) {
-        match self.emu_mode {
-            EmulationMode::Dmg => {
-                // AF = 0x01B0
-                self.r[0] = 0x01;
-                self.r[1] = 0xB0;
-                // BC = 0x0013
-                self.r[2] = 0x00;
-                self.r[3] = 0x13;
-                // DE = 0x00D8
-                self.r[4] = 0x00;
-                self.r[5] = 0xD8;
-                // HL = 0x014D
-                self.r[6] = 0x01;
-                self.r[7] = 0x4D;
-            }
-            EmulationMode::Cgb => {
-                // AF = 0x1180;
-                self.r[0] = 0x11;
-                self.r[1] = 0x80;
-                // BC = 0x0000;
-                self.r[2] = 0x00;
-                self.r[3] = 0x00;
-                // DE = 0xFF56;
-                self.r[4] = 0xFF;
-                self.r[5] = 0x56;
-                // HL = 0x000D;
-                self.r[6] = 0x00;
-                self.r[7] = 0x0D;
-            }
-        }
-
-        self.sp = 0xFFFE;
-
-        self.mmu.simulate_bootrom();
-        self.mmu.gpu.simulate_bootrom();
-        self.mmu.apu.simulate_bootrom();
-
-        self.pc = 0x0100;
     }
 
     // -------------------------------------------------------------
@@ -781,16 +741,15 @@ impl Cpu {
     }
 
     pub fn stop(&mut self) {
+        self.stopped = true;
+
         if self.mmu.cgb_mode.prepare_speed_switch != 0x0 {
             self.mmu.cgb_mode.speed = match self.mmu.cgb_mode.speed {
                 CgbSpeed::Normal => CgbSpeed::Double,
                 CgbSpeed::Double => CgbSpeed::Normal,
             };
             self.mmu.cgb_mode.prepare_speed_switch = 0x0;
-            self.stopped = true;
             self.leave_stop_mode();
-        } else {
-            self.stopped = true;
         }
     }
 
@@ -1314,19 +1273,42 @@ impl Cpu {
         self.cycles += speed_aware_cycles;
 
         // Step Timers
-        self.mmu.timer_tick(cycles);
+        self.mmu.timer_tick(speed_aware_cycles);
 
         // OAM DMA
         if !self.stopped && !self.halted {
-            self.mmu.oam_dma_tick(cycles);
+            self.mmu.oam_dma_tick(speed_aware_cycles);
         }
 
         // Step GPU
-        self.mmu.gpu_tick(speed_aware_cycles);
+        self.mmu.gpu_tick(cycles);
 
         // Step APU
-        self.mmu.apu_tick(speed_aware_cycles);
+        self.mmu.apu_tick(cycles);
     }
+
+    // fn add_cycles(&mut self, cycles: usize) {
+    //     let speed_aware_cycles = match self.mmu.cgb_mode.speed {
+    //         CgbSpeed::Normal => cycles,
+    //         CgbSpeed::Double => cycles >> 1,
+    //     };
+
+    //     self.cycles += speed_aware_cycles;
+
+    //     // Step Timers
+    //     self.mmu.timer_tick(cycles);
+
+    //     // OAM DMA
+    //     if !self.stopped && !self.halted {
+    //         self.mmu.oam_dma_tick(cycles);
+    //     }
+
+    //     // Step GPU
+    //     self.mmu.gpu_tick(speed_aware_cycles);
+
+    //     // Step APU
+    //     self.mmu.apu_tick(speed_aware_cycles);
+    // }
 
     /// Fetch next byte at pc from memory and increment pc.
     pub fn fetch(&mut self) -> u8 {
@@ -1449,7 +1431,8 @@ mod tests {
     fn test_blargg() {
         // let rom = fs::read("roms/instr_timing.gb").unwrap();
         // let rom = fs::read("roms/acceptance/ei_timing.gb").unwrap();
-        let rom = fs::read("roms/interrupt_time.gb").unwrap();
+        // let rom = fs::read("roms/interrupt_time.gb").unwrap();
+        let rom = fs::read("roms/Aladdin (USA).gbc").unwrap();
         println!("{:#X}", rom[0x147]);
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
@@ -1462,6 +1445,7 @@ mod tests {
             //     cpu.mmu.get_byte(cpu.get_r16(&R16::HL)),
             //     cpu.get_r8(&R8::A),
             // );
+            // println!("speed: {:?}", cpu.mmu.cgb_mode.speed);
             cpu.tick();
         }
     }

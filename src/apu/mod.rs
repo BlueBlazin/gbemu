@@ -45,6 +45,7 @@ pub struct Apu {
     master_on: bool,
     master_vol_left: f32,
     master_vol_right: f32,
+    nr50: u8,
     nr51: u8,
 }
 
@@ -63,6 +64,7 @@ impl Apu {
             master_on: false,
             master_vol_left: 1.0,
             master_vol_right: 1.0,
+            nr50: 0,
             nr51: 0,
         }
     }
@@ -185,6 +187,7 @@ impl Apu {
             0xFF15..=0xFF19 => self.channel2.get_byte(addr),
             0xFF1A..=0xFF1E => self.channel3.get_byte(addr),
             0xFF1F..=0xFF23 => self.channel4.get_byte(addr),
+            0xFF24 => self.nr50,
             0xFF25 => self.nr51,
             0xFF26 => {
                 (self.master_on as u8) << 7
@@ -207,6 +210,7 @@ impl Apu {
             0xFF24 => {
                 self.master_vol_left = (((value & 0x70) >> 4) as f32) / 7.0;
                 self.master_vol_right = ((value & 0x7) as f32) / 7.0;
+                self.nr50 = value;
             }
             0xFF25 => self.nr51 = value,
             0xFF26 => {
