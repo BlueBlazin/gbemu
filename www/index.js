@@ -119,9 +119,6 @@ function emulate(romData) {
   let start = null;
 
   function renderLoop(timestamp) {
-    if (!start) start = timestamp;
-    const delta = timestamp - start;
-    // console.log(1000 / delta);
     // Update emulator
     gb.update();
     // Draw Screen
