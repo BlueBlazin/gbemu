@@ -14,10 +14,36 @@ const SCREEN_DEPTH: usize = 4;
 const VRAM_OFFSET: u16 = 0x8000;
 const OAM_OFFSET: u16 = 0xFE00;
 
-macro_rules! bit {
-    ( $upper:expr , $lower:expr , $mask:expr ) => {
-        ((((($upper & $mask) != 0) as u8) << 1) | ((($lower & $mask) != 0) as u8))
-    };
+// macro_rules! bit {
+//     ( $upper:expr , $lower:expr , $mask:expr ) => {
+//         ((((($upper & $mask) != 0) as u8) << 1) | ((($lower & $mask) != 0) as u8))
+//     };
+// }
+
+pub struct Pixel {}
+
+pub enum FetcherState {
+    Sleep(usize),
+    GetTile,
+    GetTileDataLow,
+    GetTileDataHigh,
+    Push(usize),
+}
+
+pub struct Fetcher {
+    pub state: FetcherState,
+    pub x: u8,
+    pub y: u8,
+}
+
+impl Fetcher {
+    pub fn new() -> Self {
+        Self {
+            state: FetcherState::Sleep(0),
+            x: 0,
+            y: 0,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -66,6 +92,9 @@ pub struct Gpu {
     vram_bank: usize,
     win_counter: usize,
     pub oam_dma_active: bool,
+
+    // New Pixel FIFO stuff
+    fetcher: Fetcher,
 }
 
 impl Gpu {
@@ -95,6 +124,9 @@ impl Gpu {
             vram_bank: 0,
             win_counter: 0,
             oam_dma_active: false,
+
+            // New Pixel FIFO stuff
+            fetcher: Fetcher::new(),
         }
     }
 
@@ -106,71 +138,55 @@ impl Gpu {
         self.lcd.as_ptr()
     }
 
-    pub fn simulate_bootrom(&mut self) {
-        self.set_byte(0xFF40, 0x91);
-        self.set_byte(0xFF42, 0x00);
-        self.set_byte(0xFF43, 0x00);
-        self.set_byte(0xFF45, 0x00);
-        self.set_byte(0xFF47, 0xFC);
-        self.set_byte(0xFF48, 0xFF);
-        self.set_byte(0xFF49, 0xFF);
+    // fn step_fetcher(&mut self) {
+    //     match self.fetcher.state {
+    //         FetcherState::Sleep(0) => {
+    //             self.fetcher.state = FetcherState::GetTile;
+    //         }
+    //         FetcherState::GetTile => {
+    //             // Determine which BG or Win tile to fetch pixels from
+    //             let tile_addr = if self.is_win_enabled() && self.is_win_pixel() {
+    //                 let base_addr = self.lcdc.win_tilemap();
+    //                 self.fetcher.y = self.win_counter as u8;
+    //                 self.fetcher.x = self.position.window_x;
 
-        match self.emu_mode {
-            EmulationMode::Dmg => {
-                self.set_byte(0xFF41, 0x85);
-            }
-            EmulationMode::Cgb => {
-                self.set_byte(0xFF41, 0x81);
-                self.set_byte(0xFF44, 0x90);
-            }
-        }
-
-        self.set_byte(0xFF4A, 0x00);
-        self.set_byte(0xFF4B, 0x00);
-        // self.set_byte(0xFF40, 0x90);
-    }
-
-    fn draw_line(&mut self) {
-        for i in 0..SCREEN_WIDTH {
-            self.pixel_types[i] = PixelType::BgColor0;
-            let ly = self.position.ly as usize;
-            self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 0] = 255;
-            self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 1] = 255;
-            self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 2] = 255;
-            self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + i * SCREEN_DEPTH + 3] = 255;
-        }
-
-        self.draw_line_bg();
-        self.draw_line_sprites();
-    }
-
-    fn clear_screen(&mut self) {
-        for i in 0..self.lcd.len() {
-            self.lcd[i] = 255;
-        }
-    }
-
-    fn draw_line_bg(&mut self) {
-        if (self.emu_mode == EmulationMode::Dmg) && (self.lcdc.lcdc0 == 0) {
-            self.draw_blank_line();
-        } else {
-            for i in 0..SCREEN_WIDTH {
-                if self.is_win_enabled() && self.is_win_pixel(i) {
-                    self.put_win_pixel(i);
-                } else {
-                    self.put_bg_pixel(i);
-                }
-            }
-        }
-        self.update_window_counter();
-    }
-
-    fn draw_blank_line(&mut self) {
-        for i in 0..SCREEN_WIDTH {
-            let (r, g, b) = self.get_rgb(0, self.dmgp.bgp);
-            self.update_screen_row(i, r, g, b);
-        }
-    }
+    //                 let offset = (self.fetcher.y as u16 / 8) * 32
+    //                     + (self.position.lx as u16 + 7 - self.fetcher.x as u16) / 8;
+    //                 base_addr + offset
+    //             } else {
+    //                 let base_addr = self.lcdc.bg_tilemap();
+    //                 self.fetcher.y = self.position.ly.wrapping_add(self.position.scroll_y);
+    //                 self.fetcher.x = self.position.lx.wrapping_add(self.position.scroll_x);
+    //                 let offset = (self.fetcher.y as u16 / 8) * 32 + (self.fetcher.x as u16 / 8);
+    //                 base_addr + offset
+    //             };
+    //             // Determine row and col of the tile
+    //             // Get tile number from VRAM
+    //             self.fetcher.state = FetcherState::Sleep(1);
+    //         }
+    //         FetcherState::Sleep(1) => {
+    //             self.fetcher.state = FetcherState::GetTileDataLow;
+    //         }
+    //         FetcherState::GetTileDataLow => {
+    //             // Get tile data low byte
+    //             self.fetcher.state = FetcherState::Sleep(2);
+    //         }
+    //         FetcherState::Sleep(2) => {
+    //             self.fetcher.state = FetcherState::GetTileDataHigh;
+    //         }
+    //         FetcherState::GetTileDataHigh => {
+    //             // Get tile data high byte
+    //             self.fetcher.state = FetcherState::Push(0);
+    //         }
+    //         FetcherState::Push(0) => {
+    //             self.fetcher.state = FetcherState::Push(1);
+    //         }
+    //         FetcherState::Push(1) => {
+    //             self.fetcher.state = FetcherState::Sleep(0);
+    //         }
+    //         _ => unreachable!(),
+    //     }
+    // }
 
     fn is_win_enabled(&self) -> bool {
         self.lcdc.window_enabled(&self.emu_mode)
@@ -179,199 +195,46 @@ impl Gpu {
     }
 
     #[inline]
-    fn is_win_pixel(&self, i: usize) -> bool {
-        self.position.window_x <= (i + 7) as u8 && self.position.window_y <= self.position.ly
+    fn is_win_pixel(&self) -> bool {
+        self.position.window_x <= (self.position.lx + 7) as u8
+            && self.position.window_y <= self.position.ly
     }
 
-    #[inline]
-    fn update_window_counter(&mut self) {
-        if self.is_win_enabled() && self.position.window_y <= self.position.ly {
-            self.win_counter += 1;
-        }
-    }
-
-    fn put_win_pixel(&mut self, i: usize) {
-        let lx = i as u8;
-        let wx = self.position.window_x;
-
-        // get idx of the coincident window tile
-        let base_addr = self.lcdc.win_tilemap();
-        let tilemap_offset = (self.win_counter / 8) * 32 + (i + 7 - wx as usize) / 8;
-        let tilemap_addr = base_addr + tilemap_offset as u16;
-        let tile_idx = self.get_vram_byte(tilemap_addr, 0);
-
-        // get addr of tile
-        let addr = self.tiledata_addr(self.lcdc.bg_tiledata_sel, tile_idx);
-
-        // set pixel value
-        let row = (self.win_counter % 8) as u16;
-        let col = (lx + 7 - wx) % 8;
-
-        match self.emu_mode {
-            EmulationMode::Dmg => self.set_bg_pixel(addr, row, col, i),
-            EmulationMode::Cgb => self.set_cgb_bg_pixel(addr, row, col, i, tilemap_addr),
-        }
-    }
-
-    fn put_bg_pixel(&mut self, i: usize) {
-        // For normal background, the origin is transformed to (sx, sy).
-        // A consequence of this is that values can wrap around.
-        let (cx, ly) = (i as u8, self.position.ly);
-        let (sx, sy) = (self.position.scroll_x, self.position.scroll_y);
-
-        // get index of coincident bg tile
-        let base_addr = self.lcdc.bg_tilemap();
-        let tilemap_offset = (sy.wrapping_add(ly) as u16 / 8) * 32 + sx.wrapping_add(cx) as u16 / 8;
-        let tilemap_addr = base_addr + tilemap_offset;
-        let tile_idx = self.get_vram_byte(tilemap_addr, 0);
-
-        // get addr of tile
-        let addr = self.tiledata_addr(self.lcdc.bg_tiledata_sel, tile_idx);
-
-        // set pixel value
-        let row = (sy.wrapping_add(ly) % 8) as u16;
-        let col = sx.wrapping_add(cx) % 8;
-        match self.emu_mode {
-            EmulationMode::Dmg => self.set_bg_pixel(addr, row, col, i),
-            EmulationMode::Cgb => self.set_cgb_bg_pixel(addr, row, col, i, tilemap_addr),
-        }
-    }
-
-    fn set_cgb_bg_pixel(&mut self, addr: u16, row: u16, col: u8, i: usize, tilemap_addr: u16) {
-        let tile_attr = BgAttr::from(self.get_vram_byte(tilemap_addr, 1));
-
-        let (lower, upper) = if tile_attr.mirror_vertical {
-            (
-                self.get_vram_byte(addr + (7 - row) * 2 + 0, tile_attr.vram_bank),
-                self.get_vram_byte(addr + (7 - row) * 2 + 1, tile_attr.vram_bank),
-            )
-        } else {
-            (
-                self.get_vram_byte(addr + row * 2 + 0, tile_attr.vram_bank),
-                self.get_vram_byte(addr + row * 2 + 1, tile_attr.vram_bank),
-            )
-        };
-
-        let value = if tile_attr.mirror_horizontal {
-            bit!(upper, lower, 0x80 >> (7 - col))
-        } else {
-            bit!(upper, lower, 0x80 >> col)
-        };
-
-        self.pixel_types[i] = match (tile_attr.has_priority, value) {
-            (_, 0) => PixelType::BgColor0,
-            (true, _) => PixelType::BgPriorityOverride,
-            (false, _) => PixelType::BgColorOpaque,
-        };
-
-        let (r, g, b) = self.get_rgb_cgb(value, tile_attr.bgp_num, false);
-        self.update_screen_row(i, r, g, b);
-    }
-
-    fn set_bg_pixel(&mut self, addr: u16, row: u16, col: u8, i: usize) {
-        let lower = self.get_byte(addr + row * 2 + 0);
-        let upper = self.get_byte(addr + row * 2 + 1);
-
-        // set screen[i] with appropriate color value
-        let value = bit!(upper, lower, 0x80 >> col);
-        self.pixel_types[i] = match value {
-            0 => PixelType::BgColor0,
-            _ => PixelType::BgColorOpaque,
-        };
-        let (r, g, b) = self.get_rgb(value, self.dmgp.bgp);
-        self.update_screen_row(i, r, g, b);
-    }
-
-    fn tiledata_addr(&self, sel: u8, idx: u8) -> u16 {
-        if sel == 0 {
-            0x8800u16 + (idx as i8 as i16 + 128) as u16 * 16
-        } else {
-            0x8000u16 + (idx as u16 * 16)
-        }
-    }
-
-    fn draw_line_sprites(&mut self) {
-        if !self.lcdc.obj_enabled() {
-            return;
-        }
-
-        let ly = self.position.ly as i32;
-        let height = if self.lcdc.obj_size == 0 { 8i32 } else { 16i32 };
-
-        let mut sprites: Vec<_> = (0..40)
-            .map(|i| (i, Sprite::from(&self.oam[i * 4..(i + 1) * 4])))
-            .filter(|(_, s)| (ly >= s.y) && (ly < s.y + height))
-            .take(10)
-            .collect();
-
-        sprites.sort_by_key(|(i, s)| match self.emu_mode {
-            EmulationMode::Dmg => (s.x, *i),
-            EmulationMode::Cgb => (*i as u32 as i32, 0),
-        });
-
-        for (_, sprite) in sprites.into_iter().rev() {
-            let row = if sprite.mirror_vertical {
-                (height - 1 - (ly - sprite.y)) as u16
-            } else {
-                (ly - sprite.y) as u16
-            };
-
-            let tile_idx = if self.lcdc.obj_size != 0 {
-                sprite.number & 0x00FE
-            } else {
-                sprite.number & 0x00FF
-            };
-
-            let tile_addr = 0x8000u16 + tile_idx * 16 + row * 2;
-
-            let (lower, upper) = match self.emu_mode {
-                EmulationMode::Dmg => (self.get_byte(tile_addr + 0), self.get_byte(tile_addr + 1)),
-                EmulationMode::Cgb => (
-                    self.get_vram_byte(tile_addr + 0, sprite.vram_bank),
-                    self.get_vram_byte(tile_addr + 1, sprite.vram_bank),
-                ),
-            };
-
-            for j in 0..8 {
-                let col = sprite.x + j;
-                if (col < 0) || (col >= SCREEN_WIDTH as i32) {
-                    continue;
-                }
-
-                let value = if sprite.mirror_horizontal {
-                    bit!(upper, lower, 0x80 >> (7 - j))
-                } else {
-                    bit!(upper, lower, 0x80 >> j)
-                };
-
-                let below_bg = match &self.pixel_types[col as usize] {
-                    _ if self.lcdc.lcdc0 == 0 => false,
-                    PixelType::BgColor0 => false,
-                    PixelType::BgColorOpaque if !sprite.has_priority => true,
-                    PixelType::BgPriorityOverride => true,
-                    _ => false,
-                };
-
-                if value != 0 && !below_bg {
-                    match self.emu_mode {
-                        EmulationMode::Dmg => {
-                            let palette = if sprite.obp1 {
-                                self.dmgp.obp1
-                            } else {
-                                self.dmgp.obp0
-                            };
-                            let (r, g, b) = self.get_rgb(value, palette);
-                            self.update_screen_row(col as usize, r, g, b);
-                        }
-                        EmulationMode::Cgb => {
-                            let (r, g, b) = self.get_rgb_cgb(value, sprite.obp_num, true);
-                            self.update_screen_row(col as usize, r, g, b);
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // ----------------------------------------------------------------------
+    // Pixel FIFO
+    // FIFO - 4MHz
+    //  pushes one pixel per clock
+    //  pauses unless it contains more than 8 pixels
+    //
+    // Fetch - 2MHz
+    //  3 clocks to fetch 8 pixels
+    //  pauses in 4th clock unless space in FIFO
+    //
+    // FIFO and Fetcher run in parallel
+    //
+    // Fetcher:
+    //  Read Tile #
+    //  Read Data 0
+    //  Read Data 1
+    //
+    // Fetcher idles until pixel FIFO has 8 available slots
+    // Then puts 8 pixels into the FIFO
+    //
+    // Scrolling:
+    //  If SCX = 3, FIFO simply discard the first 3 pixels,
+    //  starts pushing from 4th pixel onward onto the LCD
+    //
+    // If FIFO has pushed 160 pixels, it discards remaining pixels
+    //
+    // Window:
+    //  While FIFO is laying out pixels, if next pixel is a Window pixel,
+    //  the FIFO is cleared, Fetcher switches over to window map,
+    //  and Fetcher is restarted
+    //
+    // Sprites:
+    //  N/A
+    //
+    // ----------------------------------------------------------------------
 
     fn update_screen_row(&mut self, x: usize, r: u8, g: u8, b: u8) {
         let ly = self.position.ly as usize;
@@ -408,22 +271,10 @@ impl Gpu {
     }
 
     fn color_correct(&self, r: u16, g: u16, b: u16) -> (u8, u8, u8) {
-        let r = r as u32;
-        let g = g as u32;
-        let b = b as u32;
-
-        // MatCurrie
-        // (
-        //     ((r << 3) | (r >> 2)) as u8,
-        //     ((g << 3) | (g >> 2)) as u8,
-        //     ((b << 3) | (b >> 2)) as u8,
-        // )
-
-        // Gambatte
         (
-            ((r * 13 + g * 2 + b) >> 1) as u8,
-            ((g * 3 + b) << 1) as u8,
-            ((r * 3 + g * 2 + b * 11) >> 1) as u8,
+            ((r << 3) | (r >> 2)) as u8,
+            ((g << 3) | (g >> 2)) as u8,
+            ((b << 3) | (b >> 2)) as u8,
         )
     }
 
