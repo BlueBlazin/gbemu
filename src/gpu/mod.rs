@@ -80,6 +80,15 @@ impl Fetcher {
             high: 0xFF,
         }
     }
+
+    pub fn reset(&mut self) {
+        self.state = FetcherState::Sleep(0);
+        self.fetching = FetchType::Background;
+        self.x = 0;
+        self.tile_num = 0;
+        self.low = 0xFF;
+        self.high = 0xFF;
+    }
 }
 
 pub struct BgFifo {
@@ -111,7 +120,7 @@ impl BgFifo {
 
     pub fn push(&mut self, mut low: u8, mut high: u8) {
         for _ in 0..8 {
-            self.q.push_back((low >> 7) | ((high >> 7) << 1));
+            self.q.push_back(((high >> 7) << 1) | (low >> 7));
             low <<= 1;
             high <<= 1;
         }
@@ -146,7 +155,7 @@ pub struct Gpu {
     // Pixel Pipeline
     bg_fifo: BgFifo,
     fetcher: Fetcher,
-    borrowed_cycles: usize,
+    mode3_cycles: usize,
 }
 
 impl Gpu {
@@ -180,7 +189,7 @@ impl Gpu {
             // Pixel Pipeline
             bg_fifo: BgFifo::new(),
             fetcher: Fetcher::new(),
-            borrowed_cycles: 0,
+            mode3_cycles: 0,
         }
     }
 
@@ -233,21 +242,21 @@ impl Gpu {
     // ----------------------------------------------------------------------
 
     fn bg_fifo_tick(&mut self) {
-        if self.bg_fifo.size() < 8 {
+        self.mode3_cycles += 1;
+
+        if self.bg_fifo.size() <= 8 {
             return;
         }
 
         if self.bg_fifo.scx > 0 {
             self.bg_fifo.pop();
             self.bg_fifo.scx -= 1;
-            self.borrowed_cycles += 1;
             return;
         }
 
         let value = self.bg_fifo.pop();
         let (r, g, b) = self.get_rgb(value, self.dmgp.bgp);
         self.update_screen_row(self.position.lx as usize, r, g, b);
-
         self.position.lx += 1;
     }
 
@@ -263,7 +272,8 @@ impl Gpu {
                         let base = self.lcdc.bg_tilemap();
                         let row = self.position.ly.wrapping_add(self.position.scroll_y) / 8;
                         let col = (self.position.scroll_x / 8 + self.fetcher.x) % 32;
-                        self.fetcher.tile_num = self.get_byte(base + row as u16 * 32 + col as u16);
+                        let addr = base + row as u16 * 32 + col as u16;
+                        self.fetcher.tile_num = self.get_vram_byte(addr, 0);
                     }
                     FetchType::Window => {}
                 }
@@ -277,7 +287,7 @@ impl Gpu {
                 let row = self.position.ly.wrapping_add(self.position.scroll_y) % 8;
                 let tile_addr =
                     self.tiledata_addr(self.lcdc.bg_tiledata_sel, self.fetcher.tile_num);
-                self.fetcher.low = self.get_byte(tile_addr + row as u16 * 2);
+                self.fetcher.low = self.get_vram_byte(tile_addr + row as u16 * 2, 0);
                 self.fetcher.state = FetcherState::Sleep(2);
             }
             FetcherState::Sleep(2) => {
@@ -288,7 +298,7 @@ impl Gpu {
                 let row = self.position.ly.wrapping_add(self.position.scroll_y) % 8;
                 let tile_addr =
                     self.tiledata_addr(self.lcdc.bg_tiledata_sel, self.fetcher.tile_num);
-                self.fetcher.high = self.get_byte(tile_addr + row as u16 * 2 + 1);
+                self.fetcher.high = self.get_vram_byte(tile_addr + row as u16 * 2 + 1, 0);
                 self.fetcher.state = FetcherState::Push(0);
             }
             // Push tile row data to pixel FIFO
@@ -411,8 +421,8 @@ impl Gpu {
     }
 
     fn hblank_tick(&mut self, cycles: usize) -> usize {
-        if self.clock + cycles >= 204 - self.borrowed_cycles {
-            let cycles_left = self.clock + cycles - (204 - self.borrowed_cycles);
+        if self.clock + cycles >= 204 - (self.mode3_cycles - 172) {
+            let cycles_left = self.clock + cycles - (204 - (self.mode3_cycles - 172));
             self.clock = 0;
             self.position.ly += 1;
             self.check_coincidence();
@@ -455,71 +465,6 @@ impl Gpu {
         }
     }
 
-    // pub fn tick2(&mut self, cycles: usize) {
-    //     if self.lcdc.display_enable == 0 {
-    //         return;
-    //     }
-
-    //     match self.stat.mode {
-    //         GpuMode::OamSearch => {
-    //             self.clock += cycles;
-
-    //             // 80 clocks
-    //             if self.clock >= 80 {
-    //                 self.clock -= 80;
-    //                 self.change_mode(GpuMode::PixelTransfer);
-    //             }
-    //         }
-    //         GpuMode::PixelTransfer => {
-    //             self.clock += cycles;
-    //             for _ in 0..cycles {
-    //                 self.bg_fifo_tick();
-    //                 self.fetcher_tick();
-    //             }
-    //         }
-    //         GpuMode::HBlank => {
-    //             self.clock += cycles;
-
-    //             // 204 clocks
-    //             if self.clock >= 204 {
-    //                 self.clock -= 204;
-    //                 self.position.ly += 1;
-    //                 self.check_coincidence();
-
-    //                 if self.position.ly > 143 {
-    //                     self.change_mode(GpuMode::VBlank);
-    //                     self.request_vblank_interrupt();
-    //                 } else {
-    //                     self.change_mode(GpuMode::OamSearch);
-    //                 }
-    //             }
-    //         }
-    //         GpuMode::VBlank => {
-    //             self.clock += cycles;
-
-    //             // 4560 clocks, 10 lines
-    //             if self.clock >= 456 {
-    //                 self.clock -= 456;
-    //                 self.position.ly += 1;
-    //                 self.check_coincidence();
-
-    //                 // STRANGE BEHAVIOR: At line 153, V-Blank has already reached
-    //                 // the top of the screen and is to be treated like line 0.
-    //                 if self.position.ly == 153 {
-    //                     self.position.ly = 0;
-    //                     self.check_coincidence();
-    //                 }
-
-    //                 if self.position.ly == 1 {
-    //                     self.position.ly = 0;
-    //                     self.win_counter = 0;
-    //                     self.change_mode(GpuMode::OamSearch);
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
     fn check_coincidence(&mut self) {
         if self.position.ly == self.position.lyc {
             self.stat.coincident = 0x04;
@@ -533,6 +478,13 @@ impl Gpu {
         self.stat.mode = mode;
         match self.stat.mode {
             GpuMode::OamSearch if self.stat.oam_int != 0 => self.request_lcd_interrupt(),
+            GpuMode::PixelTransfer => {
+                self.bg_fifo.clear_fifo();
+                self.fetcher.reset();
+                self.bg_fifo.scx = self.position.scroll_x % 8;
+                self.mode3_cycles = 0;
+                self.position.lx = 0;
+            }
             GpuMode::HBlank if self.stat.hblank_int != 0 => self.request_lcd_interrupt(),
             GpuMode::VBlank if self.stat.vblank_int != 0 => self.request_lcd_interrupt(),
             _ => (),
@@ -565,7 +517,6 @@ impl Gpu {
                 self.lcdc.display_enable = value & 0x80;
                 if old_display_enable != 0 && self.lcdc.display_enable == 0 {
                     self.change_mode(GpuMode::HBlank);
-                    // self.stat.mode = GpuMode::HBlank;
                     self.position.ly = 0;
                     self.win_counter = 0;
                     self.clock = 0;
