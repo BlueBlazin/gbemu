@@ -23,10 +23,10 @@
   "author": "Ashley Williams <ashley666ashley@gmail.com>",
   "license": "(MIT OR Apache-2.0)",
   "devDependencies": {
+    "copy-webpack-plugin": "^5.0.0",
     "gbemu": "file:../pkg",
     "webpack": "^4.29.3",
     "webpack-cli": "^3.1.0",
-    "webpack-dev-server": "^3.1.5",
-    "copy-webpack-plugin": "^5.0.0"
+    "webpack-dev-server": "^3.11.0"
   }
 }

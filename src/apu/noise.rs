@@ -111,7 +111,7 @@ impl Noise {
             0xFF1F => self.registers.nrx0 = value,
             0xFF20 => {
                 self.registers.nrx1 = value;
-                self.length_load = 64 - (value & 0x7F) as usize;
+                self.length_load = 64 - (value & 0x3F) as usize;
             }
             0xFF21 => {
                 self.registers.nrx2 = value;

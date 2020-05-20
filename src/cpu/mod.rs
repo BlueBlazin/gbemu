@@ -1454,8 +1454,9 @@ mod tests {
     fn test_blargg() {
         // let rom = fs::read("roms/instr_timing.gb").unwrap();
         // let rom = fs::read("roms/acceptance/ei_timing.gb").unwrap();
-        let rom = fs::read("roms/interrupt_time.gb").unwrap();
+        // let rom = fs::read("roms/interrupt_time.gb").unwrap();
         // let rom = fs::read("roms/Aladdin (USA).gbc").unwrap();
+        let rom = fs::read("roms/dmg-acid2.gb").unwrap();
         println!("{:#X}", rom[0x147]);
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
@@ -1468,7 +1469,6 @@ mod tests {
             //     cpu.mmu.get_byte(cpu.get_r16(&R16::HL)),
             //     cpu.get_r8(&R8::A),
             // );
-            println!("speed: {:?}", cpu.mmu.cgb_mode.speed);
             cpu.tick();
         }
     }
