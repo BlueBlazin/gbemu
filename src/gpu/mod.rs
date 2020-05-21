@@ -110,6 +110,12 @@ impl BgFifo {
         }
     }
 
+    pub fn reset(&mut self, scroll_x: u8) {
+        self.clear_fifo();
+        self.scx = scroll_x % 8;
+        self.winx = 0;
+    }
+
     pub fn clear_fifo(&mut self) {
         self.q.clear();
     }
@@ -260,12 +266,6 @@ impl Gpu {
             return;
         }
 
-        if self.bg_fifo.scx > 0 {
-            self.bg_fifo.pop();
-            self.bg_fifo.scx -= 1;
-            return;
-        }
-
         match self.fetcher.fetching {
             FetchType::Background if self.bg_fifo.scx > 0 => {
                 self.bg_fifo.pop();
@@ -307,7 +307,7 @@ impl Gpu {
                     FetchType::Window => {
                         let base = self.lcdc.win_tilemap();
                         let row = self.win_counter / 8;
-                        let col = self.fetcher.win_x / 8;
+                        let col = self.fetcher.win_x;
                         let addr = base + row as u16 * 32 + col as u16;
                         self.fetcher.tile_num = self.get_vram_byte(addr, 0);
                     }
@@ -336,7 +336,7 @@ impl Gpu {
                 self.fetcher.high = self.get_vram_byte(tile_addr + row as u16 * 2 + 1, 0);
 
                 if self.fetcher.fetching == FetchType::Window {
-                    self.fetcher.win_x += 1;
+                    self.fetcher.win_x = (self.fetcher.win_x + 1) % 32;
                 }
 
                 self.fetcher.state = FetcherState::Push(0);
@@ -531,8 +531,7 @@ impl Gpu {
         match self.stat.mode {
             GpuMode::OamSearch if self.stat.oam_int != 0 => self.request_lcd_interrupt(),
             GpuMode::PixelTransfer => {
-                self.bg_fifo.clear_fifo();
-                self.bg_fifo.scx = self.position.scroll_x % 8;
+                self.bg_fifo.reset(self.position.scroll_x);
                 self.fetcher.reset();
                 self.mode3_cycles = 0;
                 self.position.lx = 0;
