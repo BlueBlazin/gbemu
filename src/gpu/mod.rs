@@ -1,10 +1,11 @@
+pub mod fifo;
 pub mod registers;
 pub mod tiles;
 
 use crate::cpu::EmulationMode;
+use crate::gpu::fifo::{BgFetcher, FetchType, FetcherState, PixelFifo, SpriteFetcher};
 use crate::gpu::registers::{ColorPalette, LcdControl, LcdPosition, LcdStatus, MonochromePalette};
 use crate::gpu::tiles::{BgAttr, Sprite};
-use std::collections::VecDeque;
 
 const VRAM_BANK_SIZE: usize = 0x2000;
 const OAM_SIZE: usize = 0xA0;
@@ -14,12 +15,6 @@ const SCREEN_HEIGHT: usize = 144;
 const SCREEN_DEPTH: usize = 4;
 const VRAM_OFFSET: u16 = 0x8000;
 const OAM_OFFSET: u16 = 0xFE00;
-
-// macro_rules! bit {
-//     ( $upper:expr , $lower:expr , $mask:expr ) => {
-//         ((((($upper & $mask) != 0) as u8) << 1) | ((($lower & $mask) != 0) as u8))
-//     };
-// }
 
 #[derive(Debug, PartialEq)]
 pub enum GpuMode {
@@ -40,107 +35,6 @@ impl From<&GpuMode> for u8 {
     }
 }
 
-#[derive(PartialEq)]
-enum PixelType {
-    BgColor0,
-    BgColorOpaque,
-    BgPriorityOverride,
-}
-
-pub enum FetcherState {
-    Sleep(usize),
-    ReadTileNumber,
-    ReadTileDataLow,
-    ReadTileDataHigh,
-    Push(usize),
-}
-
-#[derive(PartialEq)]
-pub enum FetchType {
-    Background,
-    Window,
-}
-
-pub struct Fetcher {
-    pub state: FetcherState,
-    pub fetching: FetchType,
-    pub x: u8,
-    pub win_x: u8,
-    pub tile_num: u8,
-    pub low: u8,
-    pub high: u8,
-}
-
-impl Fetcher {
-    pub fn new() -> Self {
-        Self {
-            state: FetcherState::Sleep(0),
-            fetching: FetchType::Background,
-            x: 0,
-            win_x: 0,
-            tile_num: 0,
-            low: 0xFF,
-            high: 0xFF,
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.state = FetcherState::Sleep(0);
-        self.fetching = FetchType::Background;
-        self.x = 0;
-        self.win_x = 0;
-        self.tile_num = 0;
-        self.low = 0xFF;
-        self.high = 0xFF;
-    }
-}
-
-pub struct BgFifo {
-    pub q: VecDeque<u8>,
-    pub scx: u8,
-    pub winx: u8,
-}
-
-impl BgFifo {
-    pub fn new() -> Self {
-        Self {
-            q: VecDeque::with_capacity(16),
-            scx: 0,
-            winx: 0,
-        }
-    }
-
-    pub fn reset(&mut self, scroll_x: u8) {
-        self.clear_fifo();
-        self.scx = scroll_x % 8;
-        self.winx = 0;
-    }
-
-    pub fn clear_fifo(&mut self) {
-        self.q.clear();
-    }
-
-    pub fn size(&mut self) -> usize {
-        self.q.len()
-    }
-
-    pub fn allow_push(&self) -> bool {
-        self.q.len() <= 8
-    }
-
-    pub fn push(&mut self, mut low: u8, mut high: u8) {
-        for _ in 0..8 {
-            self.q.push_back(((high >> 7) << 1) | (low >> 7));
-            low <<= 1;
-            high <<= 1;
-        }
-    }
-
-    pub fn pop(&mut self) -> u8 {
-        self.q.pop_front().unwrap()
-    }
-}
-
 pub struct Gpu {
     pub lcd: Vec<u8>,
     pub vram0: Vec<u8>,
@@ -150,7 +44,6 @@ pub struct Gpu {
     cgbp: ColorPalette,
     emu_mode: EmulationMode,
     oam: Vec<u8>,
-    pixel_types: Vec<PixelType>,
     lcdc: LcdControl,
     dmgp: MonochromePalette,
     position: LcdPosition,
@@ -163,18 +56,17 @@ pub struct Gpu {
     pub oam_dma_active: bool,
 
     // Pixel Pipeline
-    bg_fifo: BgFifo,
-    fetcher: Fetcher,
+    fifo: PixelFifo,
+    bg_fetcher: BgFetcher,
+    sprites: Vec<Sprite>,
+    sprite_comparators: Vec<u8>,
     mode3_cycles: usize,
+    cmp_idx: usize,
+    sprite_fetcher: SpriteFetcher,
 }
 
 impl Gpu {
     pub fn new(emu_mode: EmulationMode) -> Self {
-        let mut pixel_types = vec![];
-        for _ in 0..SCREEN_WIDTH {
-            pixel_types.push(PixelType::BgColor0);
-        }
-
         Gpu {
             lcd: vec![0; SCREEN_HEIGHT * SCREEN_WIDTH * SCREEN_DEPTH],
             vram0: vec![0; VRAM_BANK_SIZE],
@@ -184,7 +76,6 @@ impl Gpu {
             oam: vec![0; OAM_SIZE],
             cgbp: ColorPalette::default(),
             emu_mode,
-            pixel_types,
             lcdc: LcdControl::default(),
             dmgp: MonochromePalette::default(),
             position: LcdPosition::default(),
@@ -197,9 +88,13 @@ impl Gpu {
             oam_dma_active: false,
 
             // Pixel Pipeline
-            bg_fifo: BgFifo::new(),
-            fetcher: Fetcher::new(),
+            fifo: PixelFifo::new(),
+            bg_fetcher: BgFetcher::new(),
+            sprites: Vec::with_capacity(10),
+            sprite_comparators: Vec::with_capacity(10),
             mode3_cycles: 0,
+            cmp_idx: 0,
+            sprite_fetcher: SpriteFetcher::new(),
         }
     }
 
@@ -211,146 +106,111 @@ impl Gpu {
         self.lcd.as_ptr()
     }
 
-    // ----------------------------------------------------------------------
-    // Pixel FIFO
-    // FIFO - 4MHz
-    //  pushes one pixel per clock
-    //  pauses unless it contains more than 8 pixels
-    //
-    // Fetch - 2MHz
-    //  3 clocks to fetch 8 pixels
-    //  pauses in 4th clock unless space in FIFO
-    //
-    // FIFO and Fetcher run in parallel
-    //
-    // Fetcher:
-    //  Read Tile #
-    //  Read Data 0
-    //  Read Data 1
-    //
-    // Fetcher idles until pixel FIFO has 8 available slots
-    // Then puts 8 pixels into the FIFO
-    //
-    // Scrolling:
-    //  If SCX = 3, FIFO simply discard the first 3 pixels,
-    //  starts pushing from 4th pixel onward onto the LCD
-    //
-    // If FIFO has pushed 160 pixels, it discards remaining pixels
-    //
-    // Window:
-    //  While FIFO is laying out pixels, if next pixel is a Window pixel,
-    //  the FIFO is cleared, Fetcher switches over to window map,
-    //  and Fetcher is restarted
-    //
-    // Sprites:
-    //  N/A
-    //
-    // Extra:
-    //  LIJI says: "Only the uppermost 5 bits have an effect
-    //   3 bits affect the sub-tile scrolling, 5 bits affect the tile offset in the tilemap"
-    //
-    // ----------------------------------------------------------------------
-
-    fn bg_fifo_tick(&mut self) {
-        if self.fetcher.fetching == FetchType::Background
+    fn fifo_tick(&mut self) {
+        if self.bg_fetcher.fetching == FetchType::Background
             && self.is_win_enabled()
             && self.is_win_pixel()
         {
-            self.bg_fifo.clear_fifo();
-            self.fetcher.reset();
-            self.fetcher.fetching = FetchType::Window;
-            self.bg_fifo.winx = (self.position.lx + 7 - self.position.window_x) % 8;
+            self.fifo.clear_fifo();
+            self.bg_fetcher.reset();
+            self.bg_fetcher.fetching = FetchType::Window;
+            self.fifo.winx = (self.position.lx + 7 - self.position.window_x) % 8;
         }
 
-        if self.bg_fifo.size() <= 8 {
+        if self.fifo.size() <= 8 {
             return;
         }
 
-        match self.fetcher.fetching {
-            FetchType::Background if self.bg_fifo.scx > 0 => {
-                self.bg_fifo.pop();
-                self.bg_fifo.scx -= 1;
+        match self.bg_fetcher.fetching {
+            FetchType::Background if self.fifo.scx > 0 => {
+                self.fifo.pop();
+                self.fifo.scx -= 1;
             }
-            FetchType::Window if self.bg_fifo.winx > 0 => {
-                self.bg_fifo.pop();
-                self.bg_fifo.winx -= 1;
+            FetchType::Window if self.fifo.winx > 0 => {
+                self.fifo.pop();
+                self.fifo.winx -= 1;
+            }
+            _ if self.fifo.objx > 0 => {
+                self.fifo.objx -= 1;
             }
             _ => {
-                let value = self.bg_fifo.pop();
+                let item = self.fifo.pop();
                 let (r, g, b) = if self.lcdc.lcdc0 == 0 {
-                    self.get_rgb(0, self.dmgp.bgp)
+                    self.get_rgb(0, item.palette)
                 } else {
-                    self.get_rgb(value, self.dmgp.bgp)
+                    self.get_rgb(item.value, item.palette)
                 };
                 self.update_screen_row(self.position.lx as usize, r, g, b);
 
                 self.position.lx += 1;
+                self.check_sprite_comparators();
             }
         }
     }
 
-    fn fetcher_tick(&mut self) {
-        match self.fetcher.state {
+    fn bg_fetcher_tick(&mut self) {
+        match self.bg_fetcher.state {
             FetcherState::Sleep(0) => {
-                self.fetcher.state = FetcherState::ReadTileNumber;
+                self.bg_fetcher.state = FetcherState::ReadTileNumber;
             }
             // Read tile number from tile map
             FetcherState::ReadTileNumber => {
-                match self.fetcher.fetching {
+                match self.bg_fetcher.fetching {
                     FetchType::Background => {
                         let base = self.lcdc.bg_tilemap();
                         let row = self.position.ly.wrapping_add(self.position.scroll_y) / 8;
-                        let col = (self.position.scroll_x / 8 + self.fetcher.x) % 32;
+                        let col = (self.position.scroll_x / 8 + self.bg_fetcher.x) % 32;
                         let addr = base + row as u16 * 32 + col as u16;
-                        self.fetcher.tile_num = self.get_vram_byte(addr, 0);
+                        self.bg_fetcher.tile_num = self.get_vram_byte(addr, 0);
                     }
                     FetchType::Window => {
                         let base = self.lcdc.win_tilemap();
                         let row = self.win_counter / 8;
-                        let col = self.fetcher.win_x;
+                        let col = self.bg_fetcher.win_x;
                         let addr = base + row as u16 * 32 + col as u16;
-                        self.fetcher.tile_num = self.get_vram_byte(addr, 0);
+                        self.bg_fetcher.tile_num = self.get_vram_byte(addr, 0);
                     }
                 }
-                self.fetcher.state = FetcherState::Sleep(1);
+                self.bg_fetcher.state = FetcherState::Sleep(1);
             }
             FetcherState::Sleep(1) => {
-                self.fetcher.state = FetcherState::ReadTileDataLow;
+                self.bg_fetcher.state = FetcherState::ReadTileDataLow;
             }
             // Fetch lower byte of current row from tile at tile number
             FetcherState::ReadTileDataLow => {
                 let row = self.position.ly.wrapping_add(self.position.scroll_y) % 8;
                 let tile_addr =
-                    self.tiledata_addr(self.lcdc.bg_tiledata_sel, self.fetcher.tile_num);
-                self.fetcher.low = self.get_vram_byte(tile_addr + row as u16 * 2, 0);
-                self.fetcher.state = FetcherState::Sleep(2);
+                    self.tiledata_addr(self.lcdc.bg_tiledata_sel, self.bg_fetcher.tile_num);
+                self.bg_fetcher.low = self.get_vram_byte(tile_addr + row as u16 * 2, 0);
+                self.bg_fetcher.state = FetcherState::Sleep(2);
             }
             FetcherState::Sleep(2) => {
-                self.fetcher.state = FetcherState::ReadTileDataHigh;
+                self.bg_fetcher.state = FetcherState::ReadTileDataHigh;
             }
             // Fetch upper byte of current row from tile at tile number
             FetcherState::ReadTileDataHigh => {
                 let row = self.position.ly.wrapping_add(self.position.scroll_y) % 8;
                 let tile_addr =
-                    self.tiledata_addr(self.lcdc.bg_tiledata_sel, self.fetcher.tile_num);
-                self.fetcher.high = self.get_vram_byte(tile_addr + row as u16 * 2 + 1, 0);
+                    self.tiledata_addr(self.lcdc.bg_tiledata_sel, self.bg_fetcher.tile_num);
+                self.bg_fetcher.high = self.get_vram_byte(tile_addr + row as u16 * 2 + 1, 0);
 
-                if self.fetcher.fetching == FetchType::Window {
-                    self.fetcher.win_x = (self.fetcher.win_x + 1) % 32;
+                if self.bg_fetcher.fetching == FetchType::Window {
+                    self.bg_fetcher.win_x = (self.bg_fetcher.win_x + 1) % 32;
                 }
 
-                self.fetcher.state = FetcherState::Push(0);
+                self.bg_fetcher.state = FetcherState::Push(0);
             }
             // Push tile row data to pixel FIFO
             FetcherState::Push(0) => {
-                self.fetcher.x = (self.fetcher.x + 1) % 32;
-                self.fetcher.state = FetcherState::Push(1);
+                self.bg_fetcher.x = (self.bg_fetcher.x + 1) % 32;
+                self.bg_fetcher.state = FetcherState::Push(1);
             }
             // Push tile row data to pixel FIFO
             FetcherState::Push(1) => {
-                if self.bg_fifo.allow_push() {
-                    self.bg_fifo.push(self.fetcher.low, self.fetcher.high);
-                    self.fetcher.state = FetcherState::Sleep(0);
+                if self.fifo.allow_push() {
+                    self.fifo
+                        .push(self.bg_fetcher.low, self.bg_fetcher.high, self.dmgp.bgp);
+                    self.bg_fetcher.state = FetcherState::Sleep(0);
                 }
             }
             _ => (),
@@ -382,6 +242,130 @@ impl Gpu {
         if self.is_win_enabled() && self.position.window_y <= self.position.ly {
             self.win_counter += 1;
         }
+    }
+
+    fn check_sprite_comparators(&mut self) {
+        if !self.lcdc.obj_enabled() {
+            self.sprite_fetcher.state = FetcherState::Halted;
+            return;
+        }
+
+        while self.cmp_idx < self.sprite_comparators.len() {
+            self.cmp_idx += 1;
+            if self.sprite_comparators[self.cmp_idx - 1] == self.position.lx + 8 {
+                self.sprite_fetcher.state = FetcherState::Sleep(0);
+                return;
+            }
+        }
+
+        self.sprite_fetcher.state = FetcherState::Halted;
+        self.cmp_idx = 0;
+    }
+
+    fn sprite_fetcher_tick(&mut self) {
+        match self.sprite_fetcher.state {
+            FetcherState::Sleep(0) => {
+                self.sprite_fetcher.state = FetcherState::ReadTileNumber;
+            }
+            FetcherState::ReadTileNumber => {
+                let ly = self.position.ly;
+                let sprite = &self.sprites[self.cmp_idx - 1];
+
+                let tile_idx = if self.lcdc.obj_size != 0 {
+                    sprite.number & 0xFE
+                } else {
+                    sprite.number & 0xFF
+                };
+
+                let height = if self.lcdc.obj_size == 0 { 8 } else { 16 };
+
+                let row = if sprite.mirror_vertical {
+                    height - 1 - (ly + 16 - sprite.y)
+                } else {
+                    ly + 16 - sprite.y
+                };
+
+                self.sprite_fetcher.addr = 0x8000u16 + tile_idx * 16 + row as u16 * 2;
+
+                self.sprite_fetcher.state = FetcherState::Sleep(1);
+            }
+            FetcherState::Sleep(1) => {
+                self.sprite_fetcher.state = FetcherState::ReadTileDataLow;
+            }
+            FetcherState::ReadTileDataLow => {
+                let sprite = &self.sprites[self.cmp_idx - 1];
+                let bank = sprite.vram_bank;
+
+                self.sprite_fetcher.low = match self.emu_mode {
+                    EmulationMode::Dmg => self.get_vram_byte(self.sprite_fetcher.addr, 0),
+                    EmulationMode::Cgb => self.get_vram_byte(self.sprite_fetcher.addr, bank),
+                };
+
+                self.sprite_fetcher.state = FetcherState::Sleep(2);
+            }
+            FetcherState::Sleep(2) => {
+                self.sprite_fetcher.state = FetcherState::ReadTileDataHigh;
+            }
+            FetcherState::ReadTileDataHigh => {
+                let sprite = &self.sprites[self.cmp_idx - 1];
+                let bank = sprite.vram_bank;
+
+                self.sprite_fetcher.high = match self.emu_mode {
+                    EmulationMode::Dmg => self.get_vram_byte(self.sprite_fetcher.addr + 1, 0),
+                    EmulationMode::Cgb => self.get_vram_byte(self.sprite_fetcher.addr + 1, bank),
+                };
+
+                self.sprite_fetcher.state = FetcherState::Push(0);
+            }
+            FetcherState::Push(0) => {
+                self.sprite_fetcher.state = FetcherState::Push(1);
+            }
+            FetcherState::Push(1) if self.fifo.size() < 8 => {
+                self.bg_fetcher_tick();
+            }
+            FetcherState::Push(1) => {
+                let sprite = &self.sprites[self.cmp_idx - 1];
+
+                let palette = if sprite.obp1 {
+                    self.dmgp.obp1
+                } else {
+                    self.dmgp.obp0
+                };
+
+                self.fifo.push_sprite(
+                    self.sprite_fetcher.low,
+                    self.sprite_fetcher.high,
+                    sprite,
+                    palette,
+                );
+
+                self.sprite_fetcher.state = FetcherState::Halted;
+                self.check_sprite_comparators();
+            }
+            _ => (),
+        }
+    }
+
+    fn load_sprites(&mut self) {
+        self.cmp_idx = 0;
+        self.sprite_fetcher.reset();
+
+        let ly = self.position.ly;
+        let height = if self.lcdc.obj_size == 0 { 8 } else { 16 };
+
+        let mut sprites: Vec<_> = (0..40)
+            .map(|i| (i, Sprite::from(&self.oam[i * 4..(i + 1) * 4])))
+            .filter(|(_, s)| (ly + 16 >= s.y) && (ly + 16 < s.y + height))
+            .take(10)
+            .collect();
+
+        sprites.sort_by_key(|(i, s)| match self.emu_mode {
+            EmulationMode::Dmg => (s.x, *i),
+            EmulationMode::Cgb => (*i as u8, 0),
+        });
+
+        self.sprite_comparators = sprites.iter().map(|(_, s)| s.x).collect();
+        self.sprites = sprites.into_iter().map(|(_, s)| s).collect();
     }
 
     fn update_screen_row(&mut self, x: usize, r: u8, g: u8, b: u8) {
@@ -445,6 +429,7 @@ impl Gpu {
         if self.clock + cycles >= 80 {
             let cycles_left = self.clock + cycles - 80;
             self.clock = 0;
+            self.load_sprites();
             self.change_mode(GpuMode::PixelTransfer);
             cycles_left
         } else {
@@ -455,14 +440,22 @@ impl Gpu {
 
     fn pixel_transfer_tick(&mut self, mut cycles: usize) -> usize {
         while cycles > 0 && (self.position.lx as usize) < SCREEN_WIDTH {
-            self.fetcher_tick();
-            self.bg_fifo_tick();
+            match self.sprite_fetcher.state {
+                FetcherState::Halted => {
+                    self.bg_fetcher_tick();
+                    self.fifo_tick();
+                }
+                _ => {
+                    self.sprite_fetcher_tick();
+                }
+            }
+
             self.mode3_cycles += 1;
             cycles -= 1
         }
 
         if (self.position.lx as usize) >= SCREEN_WIDTH {
-            if self.fetcher.fetching == FetchType::Window {
+            if self.bg_fetcher.fetching == FetchType::Window {
                 self.update_window_counter();
             }
             self.change_mode(GpuMode::HBlank);
@@ -531,8 +524,8 @@ impl Gpu {
         match self.stat.mode {
             GpuMode::OamSearch if self.stat.oam_int != 0 => self.request_lcd_interrupt(),
             GpuMode::PixelTransfer => {
-                self.bg_fifo.reset(self.position.scroll_x);
-                self.fetcher.reset();
+                self.fifo.reset(self.position.scroll_x);
+                self.bg_fetcher.reset();
                 self.mode3_cycles = 0;
                 self.position.lx = 0;
             }
@@ -580,6 +573,7 @@ impl Gpu {
                 self.lcdc.obj_size = value & 0x04;
                 self.lcdc.obj_display_enable = value & 0x02;
                 self.lcdc.lcdc0 = value & 0x01;
+                self.fifo.lcdc0 = value & 0x01;
             }
             0xFF41 => {
                 self.stat.lyc_int = value & 0x40;

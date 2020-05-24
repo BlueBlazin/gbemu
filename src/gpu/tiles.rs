@@ -1,6 +1,6 @@
 pub struct Sprite {
-    pub y: i32,
-    pub x: i32,
+    pub y: u8,
+    pub x: u8,
     pub number: u16,
     pub has_priority: bool,
     pub mirror_vertical: bool,
@@ -13,8 +13,8 @@ pub struct Sprite {
 impl From<&[u8]> for Sprite {
     fn from(bytes: &[u8]) -> Sprite {
         Sprite {
-            y: bytes[0] as u16 as i32 - 16,
-            x: bytes[1] as u16 as i32 - 8,
+            y: bytes[0],
+            x: bytes[1],
             number: bytes[2] as u16,
             has_priority: (bytes[3] & 0x80) == 0,
             mirror_vertical: (bytes[3] & 0x40) != 0,
