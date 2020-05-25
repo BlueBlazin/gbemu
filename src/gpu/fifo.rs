@@ -6,12 +6,12 @@ pub enum PixelType {
     BgColor0,
     BgColorOpaque,
     BgPriorityOverride,
+    SpriteColor0,
     SpriteOpaque,
 }
 
 #[derive(Debug)]
 pub enum FetcherState {
-    Halted,
     Sleep(usize),
     ReadTileNumber,
     ReadTileDataLow,
@@ -65,7 +65,7 @@ pub struct PixelFifoItem {
     pub pixel_type: PixelType,
 }
 
-pub struct PixelFifo {
+pub struct BgFifo {
     pub q: VecDeque<PixelFifoItem>,
     pub scx: u8,
     pub winx: u8,
@@ -73,7 +73,7 @@ pub struct PixelFifo {
     pub lcdc0: u8,
 }
 
-impl PixelFifo {
+impl BgFifo {
     pub fn new() -> Self {
         Self {
             q: VecDeque::with_capacity(16),
@@ -85,7 +85,7 @@ impl PixelFifo {
     }
 
     pub fn reset(&mut self, scroll_x: u8) {
-        self.clear_fifo();
+        self.q.clear();
         self.scx = scroll_x % 8;
         self.winx = 0;
         self.objx = 0;
@@ -123,50 +123,12 @@ impl PixelFifo {
         }
     }
 
-    pub fn push_sprite(&mut self, mut low: u8, mut high: u8, sprite: &Sprite, palette: u8) {
-        let start = if sprite.x < 8 {
-            self.objx = 8 - sprite.x;
-            8 - sprite.x as usize
+    pub fn pop(&mut self) -> Option<PixelFifoItem> {
+        if self.q.len() > 8 {
+            self.q.pop_front()
         } else {
-            0
-        };
-
-        for i in 0..8 {
-            let value;
-
-            if sprite.mirror_horizontal {
-                value = ((high & 1) << 1) | (low & 1);
-                low >>= 1;
-                high >>= 1;
-            } else {
-                value = ((high >> 7) << 1) | (low >> 7);
-                low <<= 1;
-                high <<= 1;
-            }
-
-            let pixel = &self.q[i];
-
-            let hidden = match pixel.pixel_type {
-                PixelType::SpriteOpaque => true,
-                _ if self.lcdc0 == 0 => false,
-                PixelType::BgColor0 => false,
-                PixelType::BgColorOpaque if !sprite.has_priority => true,
-                PixelType::BgPriorityOverride => true,
-                _ => false,
-            };
-
-            if value != 0 && !hidden {
-                self.q[i] = PixelFifoItem {
-                    value,
-                    palette,
-                    pixel_type: PixelType::SpriteOpaque,
-                };
-            }
+            None
         }
-    }
-
-    pub fn pop(&mut self) -> PixelFifoItem {
-        self.q.pop_front().unwrap()
     }
 }
 
@@ -180,7 +142,7 @@ pub struct SpriteFetcher {
 impl SpriteFetcher {
     pub fn new() -> Self {
         Self {
-            state: FetcherState::Halted,
+            state: FetcherState::Sleep(0),
             addr: 0,
             low: 0,
             high: 0,
@@ -188,9 +150,72 @@ impl SpriteFetcher {
     }
 
     pub fn reset(&mut self) {
-        self.state = FetcherState::Halted;
+        self.state = FetcherState::Sleep(0);
         self.addr = 0;
         self.low = 0;
         self.high = 0;
+    }
+}
+
+pub struct SpriteFifo {
+    pub q: VecDeque<PixelFifoItem>,
+    pub objx: u8,
+}
+
+impl SpriteFifo {
+    pub fn new() -> Self {
+        Self {
+            q: VecDeque::with_capacity(8),
+            objx: 0,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.q.clear();
+        self.objx = 0;
+    }
+
+    pub fn size(&mut self) -> usize {
+        self.q.len()
+    }
+
+    pub fn allow_push(&self) -> bool {
+        self.q.len() <= 8
+    }
+
+    pub fn push(&mut self, mut low: u8, mut high: u8, sprite: &Sprite, palette: u8) {
+        if sprite.x < 8 {
+            self.objx = 8 - sprite.x;
+        }
+
+        for _ in 0..8 {
+            let value;
+
+            if sprite.mirror_horizontal {
+                value = ((high & 1) << 1) | (low & 1);
+                low >>= 1;
+                high >>= 1;
+            } else {
+                value = ((high >> 7) << 1) | (low >> 7);
+                low <<= 1;
+                high <<= 1;
+            }
+
+            let pixel_type = if value == 0 {
+                PixelType::SpriteColor0
+            } else {
+                PixelType::SpriteOpaque
+            };
+
+            self.q.push_back(PixelFifoItem {
+                value,
+                palette,
+                pixel_type,
+            });
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<PixelFifoItem> {
+        self.q.pop_front()
     }
 }

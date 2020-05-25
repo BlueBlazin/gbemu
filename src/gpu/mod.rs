@@ -3,7 +3,9 @@ pub mod registers;
 pub mod tiles;
 
 use crate::cpu::EmulationMode;
-use crate::gpu::fifo::{BgFetcher, FetchType, FetcherState, PixelFifo, SpriteFetcher};
+use crate::gpu::fifo::{
+    BgFetcher, BgFifo, FetchType, FetcherState, PixelFifoItem, PixelType, SpriteFetcher, SpriteFifo,
+};
 use crate::gpu::registers::{ColorPalette, LcdControl, LcdPosition, LcdStatus, MonochromePalette};
 use crate::gpu::tiles::{BgAttr, Sprite};
 
@@ -56,13 +58,17 @@ pub struct Gpu {
     pub oam_dma_active: bool,
 
     // Pixel Pipeline
-    fifo: PixelFifo,
+    bg_fifo: BgFifo,
     bg_fetcher: BgFetcher,
     sprites: Vec<Sprite>,
     sprite_comparators: Vec<u8>,
     mode3_cycles: usize,
     cmp_idx: usize,
     sprite_fetcher: SpriteFetcher,
+    sprite_fifo: SpriteFifo,
+    drawing_window: bool,
+    fetching_sprite: bool,
+    window_was_drawn: bool,
 }
 
 impl Gpu {
@@ -88,13 +94,17 @@ impl Gpu {
             oam_dma_active: false,
 
             // Pixel Pipeline
-            fifo: PixelFifo::new(),
+            bg_fifo: BgFifo::new(),
             bg_fetcher: BgFetcher::new(),
             sprites: Vec::with_capacity(10),
             sprite_comparators: Vec::with_capacity(10),
             mode3_cycles: 0,
             cmp_idx: 0,
             sprite_fetcher: SpriteFetcher::new(),
+            sprite_fifo: SpriteFifo::new(),
+            drawing_window: false,
+            fetching_sprite: false,
+            window_was_drawn: true,
         }
     }
 
@@ -106,46 +116,96 @@ impl Gpu {
         self.lcd.as_ptr()
     }
 
-    fn fifo_tick(&mut self) {
-        if self.bg_fetcher.fetching == FetchType::Background
-            && self.is_win_enabled()
-            && self.is_win_pixel()
-        {
-            self.fifo.clear_fifo();
+    fn pixel_pipeline_tick(&mut self) {
+        // if sprite is being fetched, run sprite fetcher else bg fetcher
+        // bg fetcher pauses while a sprite is being fetched
+        if self.fetching_sprite {
+            self.sprite_fetcher_tick();
+        } else {
+            self.bg_fetcher_tick();
+        }
+
+        // push pixel to lcd if either bg or both bg and sprite pixels are ready
+        // if bg fifo isn't ready, sprite fifo won't be ticked and no sprite
+        // pixels will be popped either
+        if let Some(bg_pixel) = self.bg_fifo_tick() {
+            let pixel = match self.sprite_fifo_tick() {
+                Some(obj_pixel) => self.mix_bg_and_sprite(bg_pixel, obj_pixel),
+                None => bg_pixel,
+            };
+            self.push_to_lcd(pixel);
+            self.advance_lx();
+        }
+    }
+
+    fn mix_bg_and_sprite(&mut self, bg: PixelFifoItem, sprite: PixelFifoItem) -> PixelFifoItem {
+        let bg_value = bg.value;
+        let hidden = match bg.pixel_type {
+            _ if self.lcdc.lcdc0 == 0 => false,
+            PixelType::BgColor0 => false,
+            PixelType::SpriteOpaque => true,
+            _ => false,
+        };
+
+        if sprite.value != 0 && !hidden {
+            sprite
+        } else {
+            bg
+        }
+    }
+
+    fn push_to_lcd(&mut self, pixel: PixelFifoItem) {
+        let (r, g, b) = self.get_rgb(pixel.value, pixel.palette);
+        self.update_screen_row(self.position.lx as usize, r, g, b);
+    }
+
+    fn advance_lx(&mut self) {
+        self.position.lx += 1;
+
+        // If current pixel is the **start** of the window,
+        // discard bg FIFO and reset bg Fetcher to load window instead.
+        if !self.drawing_window && self.is_win_enabled() && self.is_win_pixel() {
+            self.bg_fifo.clear_fifo();
             self.bg_fetcher.reset();
             self.bg_fetcher.fetching = FetchType::Window;
-            self.fifo.winx = (self.position.lx + 7 - self.position.window_x) % 8;
+            self.drawing_window = true;
         }
 
-        if self.fifo.size() <= 8 {
-            return;
+        // Handle sprites beginning on current pixel.
+        self.check_sprite_comparators();
+    }
+
+    fn sprite_fifo_tick(&mut self) -> Option<PixelFifoItem> {
+        if self.sprite_fifo.size() <= 8 {
+            return None;
         }
 
-        match self.bg_fetcher.fetching {
-            FetchType::Background if self.fifo.scx > 0 => {
-                self.fifo.pop();
-                self.fifo.scx -= 1;
-            }
-            FetchType::Window if self.fifo.winx > 0 => {
-                self.fifo.pop();
-                self.fifo.winx -= 1;
-            }
-            _ if self.fifo.objx > 0 => {
-                self.fifo.objx -= 1;
-            }
-            _ => {
-                let item = self.fifo.pop();
-                let (r, g, b) = if self.lcdc.lcdc0 == 0 {
-                    self.get_rgb(0, item.palette)
-                } else {
-                    self.get_rgb(item.value, item.palette)
-                };
-                self.update_screen_row(self.position.lx as usize, r, g, b);
-
-                self.position.lx += 1;
-                self.check_sprite_comparators();
-            }
+        // If a sprite has sprite.x < 8, it's partly hidden so we discard those pixels
+        if self.sprite_fifo.objx > 0 {
+            self.sprite_fifo.pop();
+            self.sprite_fifo.objx -= 1;
+            return None;
         }
+
+        self.sprite_fifo.pop()
+    }
+
+    fn bg_fifo_tick(&mut self) -> Option<PixelFifoItem> {
+        // FIFO doesn't push unless it contains more than 8 pixels.
+        if self.bg_fifo.size() <= 8 {
+            return None;
+        }
+
+        // If scroll_x > 0, pixels may not be aligned to blocks of 8 pixels.
+        // The shift in alignment will be scroll_x % 8. If this exists, we
+        // need to discard that many pixels before pushing to LCD.
+        if self.bg_fifo.scx > 0 {
+            self.bg_fifo.pop();
+            self.bg_fifo.scx -= 1;
+            return None;
+        }
+
+        self.bg_fifo.pop()
     }
 
     fn bg_fetcher_tick(&mut self) {
@@ -206,13 +266,16 @@ impl Gpu {
                 self.bg_fetcher.state = FetcherState::Push(1);
             }
             // Push tile row data to pixel FIFO
-            FetcherState::Push(1) => {
-                if self.fifo.allow_push() {
-                    self.fifo
-                        .push(self.bg_fetcher.low, self.bg_fetcher.high, self.dmgp.bgp);
-                    self.bg_fetcher.state = FetcherState::Sleep(0);
+            FetcherState::Push(1) if self.bg_fifo.allow_push() => {
+                if self.bg_fetcher.fetching == FetchType::Window {
+                    self.window_was_drawn = true;
                 }
+                let low = self.bg_fetcher.low;
+                let high = self.bg_fetcher.high;
+                self.bg_fifo.push(low, high, self.dmgp.bgp);
+                self.bg_fetcher.state = FetcherState::Sleep(0);
             }
+            // Idle
             _ => (),
         }
     }
@@ -246,19 +309,20 @@ impl Gpu {
 
     fn check_sprite_comparators(&mut self) {
         if !self.lcdc.obj_enabled() {
-            self.sprite_fetcher.state = FetcherState::Halted;
+            self.fetching_sprite = false;
             return;
         }
 
         while self.cmp_idx < self.sprite_comparators.len() {
             self.cmp_idx += 1;
             if self.sprite_comparators[self.cmp_idx - 1] == self.position.lx + 8 {
+                self.fetching_sprite = true;
                 self.sprite_fetcher.state = FetcherState::Sleep(0);
                 return;
             }
         }
 
-        self.sprite_fetcher.state = FetcherState::Halted;
+        self.fetching_sprite = false;
         self.cmp_idx = 0;
     }
 
@@ -320,9 +384,6 @@ impl Gpu {
             FetcherState::Push(0) => {
                 self.sprite_fetcher.state = FetcherState::Push(1);
             }
-            FetcherState::Push(1) if self.fifo.size() < 8 => {
-                self.bg_fetcher_tick();
-            }
             FetcherState::Push(1) => {
                 let sprite = &self.sprites[self.cmp_idx - 1];
 
@@ -332,14 +393,14 @@ impl Gpu {
                     self.dmgp.obp0
                 };
 
-                self.fifo.push_sprite(
+                self.sprite_fifo.push(
                     self.sprite_fetcher.low,
                     self.sprite_fetcher.high,
                     sprite,
                     palette,
                 );
 
-                self.sprite_fetcher.state = FetcherState::Halted;
+                self.fetching_sprite = false;
                 self.check_sprite_comparators();
             }
             _ => (),
@@ -440,22 +501,13 @@ impl Gpu {
 
     fn pixel_transfer_tick(&mut self, mut cycles: usize) -> usize {
         while cycles > 0 && (self.position.lx as usize) < SCREEN_WIDTH {
-            match self.sprite_fetcher.state {
-                FetcherState::Halted => {
-                    self.bg_fetcher_tick();
-                    self.fifo_tick();
-                }
-                _ => {
-                    self.sprite_fetcher_tick();
-                }
-            }
-
+            self.pixel_pipeline_tick();
             self.mode3_cycles += 1;
             cycles -= 1
         }
 
         if (self.position.lx as usize) >= SCREEN_WIDTH {
-            if self.bg_fetcher.fetching == FetchType::Window {
+            if self.window_was_drawn {
                 self.update_window_counter();
             }
             self.change_mode(GpuMode::HBlank);
@@ -524,7 +576,7 @@ impl Gpu {
         match self.stat.mode {
             GpuMode::OamSearch if self.stat.oam_int != 0 => self.request_lcd_interrupt(),
             GpuMode::PixelTransfer => {
-                self.fifo.reset(self.position.scroll_x);
+                self.bg_fifo.reset(self.position.scroll_x);
                 self.bg_fetcher.reset();
                 self.mode3_cycles = 0;
                 self.position.lx = 0;
@@ -573,7 +625,6 @@ impl Gpu {
                 self.lcdc.obj_size = value & 0x04;
                 self.lcdc.obj_display_enable = value & 0x02;
                 self.lcdc.lcdc0 = value & 0x01;
-                self.fifo.lcdc0 = value & 0x01;
             }
             0xFF41 => {
                 self.stat.lyc_int = value & 0x40;
