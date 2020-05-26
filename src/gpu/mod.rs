@@ -144,7 +144,7 @@ pub struct Gpu {
     pub request_vblank_int: bool,
     pub request_lcd_int: bool,
     vram_bank: usize,
-    win_counter: usize,
+    win_counter: u8,
     pub oam_dma_active: bool,
 
     // Pixel Pipeline
@@ -258,7 +258,7 @@ impl Gpu {
             FetcherState::ReadTileNumber => {
                 let (base, row, col) = if self.drawing_window {
                     let base = self.lcdc.win_tilemap();
-                    let row = self.win_counter as u8 / 8;
+                    let row = self.win_counter / 8;
                     let col = self.bg_fetcher.x;
                     (base, row, col)
                 } else {
@@ -278,7 +278,7 @@ impl Gpu {
             // Fetch lower byte of current row from tile at tile number
             FetcherState::ReadTileDataLow => {
                 let row = if self.drawing_window {
-                    (self.win_counter as u8) % 8
+                    self.win_counter % 8
                 } else {
                     self.position.ly.wrapping_add(self.position.scroll_y) % 8
                 };
@@ -295,7 +295,7 @@ impl Gpu {
             // Fetch upper byte of current row from tile at tile number
             FetcherState::ReadTileDataHigh => {
                 let row = if self.drawing_window {
-                    (self.win_counter as u8) % 8
+                    self.win_counter % 8
                 } else {
                     self.position.ly.wrapping_add(self.position.scroll_y) % 8
                 };
