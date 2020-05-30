@@ -72,22 +72,112 @@ impl BgFetcher {
     }
 }
 
+pub struct SpriteFetcher {
+    state: FetcherState,
+    addr: u16,
+    low: u8,
+    high: u8,
+}
+
+impl SpriteFetcher {
+    pub fn new() -> Self {
+        Self {
+            state: FetcherState::Sleep(0),
+            addr: 0,
+            low: 0,
+            high: 0,
+        }
+    }
+
+    pub fn restart(&mut self) {
+        self.state = FetcherState::Sleep(0);
+        self.addr = 0;
+        self.low = 0;
+        self.high = 0;
+    }
+}
+
+pub struct SpriteFifo {
+    pub q: VecDeque<PixelFifoItem>,
+    pub unaligned_objx: u8,
+}
+
+impl SpriteFifo {
+    pub fn new() -> Self {
+        Self {
+            q: VecDeque::with_capacity(8),
+            unaligned_objx: 0,
+        }
+    }
+
+    pub fn restart(&mut self) {
+        self.q.clear();
+        self.unaligned_objx = 0;
+    }
+
+    pub fn pop(&mut self) -> Option<PixelFifoItem> {
+        self.q.pop_front()
+    }
+
+    pub fn push_row(&mut self, mut low: u8, mut high: u8, sprite: Sprite, palette: u8) {
+        for i in 0..8 {
+            let value;
+
+            if sprite.mirror_horizontal {
+                value = ((high & 1) << 1) | (low & 1);
+                low >>= 1;
+                high >>= 1;
+            } else {
+                value = ((high >> 7) << 1) | (low >> 7);
+                low <<= 1;
+                high <<= 1;
+            }
+
+            let pixel_type = if value == 0 {
+                PixelType::SpriteColor0
+            } else {
+                PixelType::SpriteOpaque
+            };
+
+            let new_item = PixelFifoItem {
+                value,
+                palette,
+                pixel_type,
+                obj_to_bg_prio: sprite.obj_to_bg_prio,
+            };
+
+            if self.q.len() <= i {
+                // if FIFO is empty, push back pixel
+                self.q.push_back(new_item);
+            } else {
+                // if FIFO not empty, replace old pixel if it's transparent
+                if self.q[i].pixel_type == PixelType::SpriteColor0 {
+                    self.q[i] = new_item;
+                }
+            }
+        }
+    }
+}
+
 #[derive(PartialEq)]
 pub enum PixelType {
     BgColor0,
     BgColorOpaque,
-    Sprite,
+    SpriteColor0,
+    SpriteOpaque,
 }
 
 pub struct PixelFifoItem {
     pub value: u8,
     pub palette: u8,
+    pub pixel_type: PixelType,
+    pub obj_to_bg_prio: u8,
 }
 
 pub struct PixelFifo {
-    q: VecDeque<PixelFifoItem>,
-    unaligned_scx: u8,
-    unaligned_winx: u8,
+    pub q: VecDeque<PixelFifoItem>,
+    pub unaligned_scx: u8,
+    pub unaligned_winx: u8,
 }
 
 impl PixelFifo {
@@ -109,10 +199,23 @@ impl PixelFifo {
         self.q.len() <= 8
     }
 
-    pub fn push_row(&mut self, mut low: u8, mut high: u8, palette: u8) {
+    pub fn push_bg_row(&mut self, mut low: u8, mut high: u8, palette: u8) {
         for i in 0..8 {
             let value = ((high >> 7) << 1) | (low >> 7);
-            self.q.push_back(PixelFifoItem { value, palette });
+
+            let pixel_type = if value == 0 {
+                PixelType::BgColor0
+            } else {
+                PixelType::BgColorOpaque
+            };
+
+            self.q.push_back(PixelFifoItem {
+                value,
+                palette,
+                pixel_type,
+                obj_to_bg_prio: 0,
+            });
+
             low <<= 1;
             high <<= 1;
         }
@@ -160,6 +263,9 @@ pub struct Gpu {
     sprites: Vec<Sprite>,
     sprite_comparators: Vec<u8>,
     cmp_idx: usize,
+    sprite_fetcher: SpriteFetcher,
+    sprite_fifo: SpriteFifo,
+    fetching_sprite: bool,
 }
 
 impl Gpu {
@@ -196,6 +302,9 @@ impl Gpu {
             sprites: Vec::with_capacity(10),
             sprite_comparators: Vec::with_capacity(10),
             cmp_idx: 0,
+            sprite_fetcher: SpriteFetcher::new(),
+            sprite_fifo: SpriteFifo::new(),
+            fetching_sprite: false,
         }
     }
 
@@ -208,23 +317,11 @@ impl Gpu {
     }
 
     fn pixel_pipeline_tick(&mut self) {
-        self.bg_fetcher_tick();
-
-        if !self.drawing_window && self.fifo.unaligned_scx > 0 {
-            self.fifo.pop();
-            self.fifo.unaligned_scx -= 1;
-            return;
-        }
-
-        if self.drawing_window && self.fifo.unaligned_winx > 0 {
-            self.fifo.pop();
-            self.fifo.unaligned_winx -= 1;
-            return;
-        }
-
-        if let Some(pixel) = self.fifo.pop() {
-            self.draw_pixel(pixel);
-            self.advance_lx();
+        if self.fetching_sprite {
+            self.sprite_fetcher_tick();
+        } else {
+            self.bg_fetcher_tick();
+            self.fifo_tick();
         }
     }
 
@@ -233,6 +330,34 @@ impl Gpu {
             self.get_rgb(0, self.dmgp.bgp)
         } else {
             self.get_rgb(pixel.value, pixel.palette)
+        };
+
+        self.update_screen_row(self.position.lx as usize, r, g, b);
+    }
+
+    fn mix_and_draw_pixel(&mut self, bg_pixel: PixelFifoItem, obj_pixel: PixelFifoItem) {
+        // let hidden = match bg_pixel.pixel_type {
+        //     _ if self.lcdc.lcdc0 == 0 => false,
+        //     PixelType::BgColor0 => false,
+        //     PixelType::SpriteOpaque => true,
+        //     _ => false,
+        // };
+
+        let sprite_hidden = if self.lcdc.lcdc0 == 0 {
+            false
+        } else if obj_pixel.obj_to_bg_prio == 0 {
+            false
+        } else {
+            match bg_pixel.pixel_type {
+                PixelType::BgColorOpaque => true,
+                _ => false,
+            }
+        };
+
+        let (r, g, b) = if obj_pixel.value != 0 && !sprite_hidden {
+            self.get_rgb(obj_pixel.value, obj_pixel.palette)
+        } else {
+            self.get_rgb(bg_pixel.value, bg_pixel.palette)
         };
 
         self.update_screen_row(self.position.lx as usize, r, g, b);
@@ -247,6 +372,150 @@ impl Gpu {
             self.drawing_window = true;
             self.fifo.unaligned_winx = (self.position.lx + 7 - self.position.window_x) % 8;
         }
+
+        self.check_sprite_comparators();
+    }
+
+    fn fifo_tick(&mut self) {
+        // Discard scrolled pixels
+        if !self.drawing_window && self.fifo.unaligned_scx > 0 {
+            if let Some(_) = self.fifo.pop() {
+                self.fifo.unaligned_scx -= 1;
+            }
+            return;
+        }
+
+        // Discard hidden window pixels
+        if self.drawing_window && self.fifo.unaligned_winx > 0 {
+            if let Some(_) = self.fifo.pop() {
+                self.fifo.unaligned_winx -= 1;
+            }
+            return;
+        }
+
+        if let Some(bg_pixel) = self.fifo.pop() {
+            match self.sprite_fifo.pop() {
+                Some(_) if self.sprite_fifo.unaligned_objx > 0 => {
+                    self.sprite_fifo.unaligned_objx -= 1;
+                    self.draw_pixel(bg_pixel);
+                }
+                Some(obj_pixel) => {
+                    self.mix_and_draw_pixel(bg_pixel, obj_pixel);
+                }
+                None => {
+                    self.draw_pixel(bg_pixel);
+                }
+            }
+            self.advance_lx();
+        }
+    }
+
+    fn sprite_fetcher_tick(&mut self) {
+        match self.sprite_fetcher.state {
+            FetcherState::Sleep(0) => {
+                self.sprite_fetcher.state = FetcherState::ReadTileNumber;
+            }
+            FetcherState::ReadTileNumber => {
+                let ly = self.position.ly;
+                let sprite = &self.sprites[self.cmp_idx - 1];
+
+                let tile_idx = if self.lcdc.obj_size != 0 {
+                    sprite.number & 0xFE
+                } else {
+                    sprite.number & 0xFF
+                };
+
+                let height = if self.lcdc.obj_size == 0 { 8 } else { 16 };
+
+                let row = if sprite.mirror_vertical {
+                    height - 1 - (ly + 16 - sprite.y)
+                } else {
+                    ly + 16 - sprite.y
+                };
+
+                self.sprite_fetcher.addr = 0x8000u16 + tile_idx * 16 + row as u16 * 2;
+
+                self.sprite_fetcher.state = FetcherState::Sleep(1);
+            }
+            FetcherState::Sleep(1) => {
+                self.sprite_fetcher.state = FetcherState::ReadTileDataLow;
+            }
+            FetcherState::ReadTileDataLow => {
+                let sprite = &self.sprites[self.cmp_idx - 1];
+                let bank = sprite.vram_bank;
+
+                self.sprite_fetcher.low = match self.emu_mode {
+                    EmulationMode::Dmg => self.get_vram_byte(self.sprite_fetcher.addr, 0),
+                    EmulationMode::Cgb => self.get_vram_byte(self.sprite_fetcher.addr, bank),
+                };
+
+                self.sprite_fetcher.state = FetcherState::Sleep(2);
+            }
+            FetcherState::Sleep(2) => {
+                self.sprite_fetcher.state = FetcherState::ReadTileDataHigh;
+            }
+            FetcherState::ReadTileDataHigh => {
+                let sprite = &self.sprites[self.cmp_idx - 1];
+                let bank = sprite.vram_bank;
+
+                self.sprite_fetcher.high = match self.emu_mode {
+                    EmulationMode::Dmg => self.get_vram_byte(self.sprite_fetcher.addr + 1, 0),
+                    EmulationMode::Cgb => self.get_vram_byte(self.sprite_fetcher.addr + 1, bank),
+                };
+
+                self.sprite_fetcher.state = FetcherState::Push(0);
+            }
+            FetcherState::Push(0) => {
+                self.sprite_fetcher.state = FetcherState::Push(1);
+            }
+            FetcherState::Push(1) => {
+                let sprite = self.sprites[self.cmp_idx - 1].clone();
+
+                let palette = if sprite.obp1 {
+                    self.dmgp.obp1
+                } else {
+                    self.dmgp.obp0
+                };
+
+                self.sprite_fifo.push_row(
+                    self.sprite_fetcher.low,
+                    self.sprite_fetcher.high,
+                    sprite,
+                    palette,
+                );
+
+                self.fetching_sprite = false;
+                self.sprite_fetcher.state = FetcherState::Sleep(0);
+                self.check_sprite_comparators();
+            }
+            _ => (),
+        }
+    }
+
+    fn check_sprite_comparators(&mut self) {
+        // Sprite invariants
+        // if sprite1.x < sprite2.x
+        // sprite1 drawn before sprite2 (sprite1 comparator will trigger first)
+        // is this correct?
+        // 1. sprite1 before sprite2 in OAM - correct DMG, CGB
+        // 2. sprite2 before sprite1 in OAM - correct DMG, not CGB
+
+        if !self.lcdc.obj_enabled() {
+            self.fetching_sprite = false;
+            return;
+        }
+
+        while self.cmp_idx < self.sprite_comparators.len() {
+            self.cmp_idx += 1;
+            if self.sprite_comparators[self.cmp_idx - 1] == self.position.lx + 8 {
+                self.sprite_fetcher.restart();
+                self.fetching_sprite = true;
+                return;
+            }
+        }
+
+        self.fetching_sprite = false;
+        self.cmp_idx = 0;
     }
 
     fn bg_fetcher_tick(&mut self) {
@@ -319,11 +588,10 @@ impl Gpu {
                     }
                     let low = self.bg_fetcher.low;
                     let high = self.bg_fetcher.high;
-                    self.fifo.push_row(low, high, self.dmgp.bgp);
+                    self.fifo.push_bg_row(low, high, self.dmgp.bgp);
                     self.bg_fetcher.state = FetcherState::Sleep(0);
                 }
             }
-            // Idle
             _ => (),
         }
     }
@@ -532,6 +800,7 @@ impl Gpu {
                 self.position.lx = 0;
                 self.fifo.restart();
                 self.bg_fetcher.restart();
+                self.sprite_fetcher.restart();
                 self.drawing_window = false;
                 self.fifo.unaligned_scx = self.position.scroll_x % 8;
 
@@ -683,7 +952,7 @@ impl Gpu {
                     self.vram1[(addr - VRAM_OFFSET) as usize] = value;
                 }
             }
-            _ => panic!("Unexpected addr in get_vram_byte"),
+            _ => panic!("Unexpected addr in get_vram_byte {:#X}", addr),
         }
     }
 
@@ -696,7 +965,7 @@ impl Gpu {
                     self.vram1[(addr - VRAM_OFFSET) as usize]
                 }
             }
-            _ => panic!("Unexpected addr in get_vram_byte"),
+            _ => panic!("Unexpected addr in get_vram_byte {:#X}", addr),
         }
     }
 

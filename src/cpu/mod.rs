@@ -1287,52 +1287,6 @@ impl Cpu {
         }
     }
 
-    // fn add_cycles(&mut self, cycles: usize) {
-    //     let speed_aware_cycles = match self.mmu.cgb_mode.speed {
-    //         CgbSpeed::Normal => cycles,
-    //         CgbSpeed::Double => cycles >> 1,
-    //     };
-
-    //     self.cycles += speed_aware_cycles;
-
-    //     // Step Timers
-    //     self.mmu.timer_tick(speed_aware_cycles);
-
-    //     // OAM DMA
-    //     if !self.stopped && !self.halted {
-    //         self.mmu.oam_dma_tick(speed_aware_cycles);
-    //     }
-
-    //     // Step GPU
-    //     self.mmu.gpu_tick(cycles);
-
-    //     // Step APU
-    //     self.mmu.apu_tick(cycles);
-    // }
-
-    // fn add_cycles(&mut self, cycles: usize) {
-    //     let speed_aware_cycles = match self.mmu.cgb_mode.speed {
-    //         CgbSpeed::Normal => cycles,
-    //         CgbSpeed::Double => cycles >> 1,
-    //     };
-
-    //     self.cycles += speed_aware_cycles;
-
-    //     // Step Timers
-    //     self.mmu.timer_tick(cycles);
-
-    //     // OAM DMA
-    //     if !self.stopped && !self.halted {
-    //         self.mmu.oam_dma_tick(cycles);
-    //     }
-
-    //     // Step GPU
-    //     self.mmu.gpu_tick(speed_aware_cycles);
-
-    //     // Step APU
-    //     self.mmu.apu_tick(speed_aware_cycles);
-    // }
-
     /// Fetch next byte at pc from memory and increment pc.
     pub fn fetch(&mut self) -> u8 {
         let byte = self.memory_get(self.pc);
@@ -1456,8 +1410,8 @@ mod tests {
         // let rom = fs::read("roms/acceptance/ei_timing.gb").unwrap();
         // let rom = fs::read("roms/interrupt_time.gb").unwrap();
         // let rom = fs::read("roms/Aladdin (USA).gbc").unwrap();
-        let rom = fs::read("roms/dmg-acid2.gb").unwrap();
-        // let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
+        // let rom = fs::read("roms/dmg-acid2.gb").unwrap();
+        let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
         println!("{:#X}", rom[0x147]);
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
