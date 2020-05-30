@@ -1,4 +1,3 @@
-#[derive(Clone)]
 pub struct Sprite {
     pub y: u8,
     pub x: u8,

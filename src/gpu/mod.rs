@@ -77,6 +77,7 @@ pub struct SpriteFetcher {
     addr: u16,
     low: u8,
     high: u8,
+    i: usize,
 }
 
 impl SpriteFetcher {
@@ -86,6 +87,7 @@ impl SpriteFetcher {
             addr: 0,
             low: 0,
             high: 0,
+            i: 0,
         }
     }
 
@@ -94,6 +96,7 @@ impl SpriteFetcher {
         self.addr = 0;
         self.low = 0;
         self.high = 0;
+        self.i = 0;
     }
 }
 
@@ -117,45 +120,6 @@ impl SpriteFifo {
 
     pub fn pop(&mut self) -> Option<PixelFifoItem> {
         self.q.pop_front()
-    }
-
-    pub fn push_row(&mut self, mut low: u8, mut high: u8, sprite: Sprite, palette: u8) {
-        for i in 0..8 {
-            let value;
-
-            if sprite.mirror_horizontal {
-                value = ((high & 1) << 1) | (low & 1);
-                low >>= 1;
-                high >>= 1;
-            } else {
-                value = ((high >> 7) << 1) | (low >> 7);
-                low <<= 1;
-                high <<= 1;
-            }
-
-            let pixel_type = if value == 0 {
-                PixelType::SpriteColor0
-            } else {
-                PixelType::SpriteOpaque
-            };
-
-            let new_item = PixelFifoItem {
-                value,
-                palette,
-                pixel_type,
-                obj_to_bg_prio: sprite.obj_to_bg_prio,
-            };
-
-            if self.q.len() <= i {
-                // if FIFO is empty, push back pixel
-                self.q.push_back(new_item);
-            } else {
-                // if FIFO not empty, replace old pixel if it's transparent
-                if self.q[i].pixel_type == PixelType::SpriteColor0 {
-                    self.q[i] = new_item;
-                }
-            }
-        }
     }
 }
 
@@ -230,6 +194,63 @@ impl PixelFifo {
     }
 }
 
+pub enum OamSearchState {
+    Sleep,
+    Search,
+}
+
+pub struct OamSearch {
+    pub state: OamSearchState,
+    pub comparators: Vec<u8>,
+    pub locations: Vec<usize>,
+    pub i: usize,
+    j: usize,
+    k: usize,
+}
+
+impl OamSearch {
+    pub fn new() -> Self {
+        Self {
+            state: OamSearchState::Sleep,
+            comparators: Vec::with_capacity(10),
+            locations: Vec::with_capacity(10),
+            i: 0,
+            j: 0,
+            k: 0,
+        }
+    }
+
+    pub fn restart(&mut self) {
+        self.state = OamSearchState::Sleep;
+        self.comparators = Vec::with_capacity(10);
+        self.locations = Vec::with_capacity(10);
+        self.i = 0;
+        self.j = 0;
+        self.k = 0;
+    }
+
+    pub fn next_x(&mut self) -> Option<u8> {
+        if self.j < self.comparators.len() {
+            let x = self.comparators[self.j];
+            Some(x)
+        } else {
+            None
+        }
+    }
+
+    pub fn advance_x(&mut self) {
+        self.j += 1;
+    }
+
+    pub fn next_loc(&mut self) -> usize {
+        self.locations[self.k]
+    }
+
+    pub fn advance_loc(&mut self) {
+        self.k += 1;
+    }
+}
+
 pub struct Gpu {
     pub lcd: Vec<u8>,
     pub vram0: Vec<u8>,
@@ -250,6 +271,9 @@ pub struct Gpu {
     win_counter: u8,
     pub oam_dma_active: bool,
 
+    // Oam Search
+    oam_search: OamSearch,
+
     // Pixel Pipeline
     mode3_cycles: usize,
     drawing_window: bool,
@@ -260,9 +284,6 @@ pub struct Gpu {
     bg_fetcher: BgFetcher,
 
     // Sprites
-    sprites: Vec<Sprite>,
-    sprite_comparators: Vec<u8>,
-    cmp_idx: usize,
     sprite_fetcher: SpriteFetcher,
     sprite_fifo: SpriteFifo,
     fetching_sprite: bool,
@@ -290,6 +311,9 @@ impl Gpu {
             win_counter: 0,
             oam_dma_active: false,
 
+            // Oam Search
+            oam_search: OamSearch::new(),
+
             // Pixel Pipeline
             mode3_cycles: 0,
             drawing_window: false,
@@ -299,9 +323,6 @@ impl Gpu {
             bg_fetcher: BgFetcher::new(),
 
             // Sprites
-            sprites: Vec::with_capacity(10),
-            sprite_comparators: Vec::with_capacity(10),
-            cmp_idx: 0,
             sprite_fetcher: SpriteFetcher::new(),
             sprite_fifo: SpriteFifo::new(),
             fetching_sprite: false,
@@ -336,13 +357,6 @@ impl Gpu {
     }
 
     fn mix_and_draw_pixel(&mut self, bg_pixel: PixelFifoItem, obj_pixel: PixelFifoItem) {
-        // let hidden = match bg_pixel.pixel_type {
-        //     _ if self.lcdc.lcdc0 == 0 => false,
-        //     PixelType::BgColor0 => false,
-        //     PixelType::SpriteOpaque => true,
-        //     _ => false,
-        // };
-
         let sprite_hidden = if self.lcdc.lcdc0 == 0 {
             false
         } else if obj_pixel.obj_to_bg_prio == 0 {
@@ -393,12 +407,15 @@ impl Gpu {
             return;
         }
 
+        if self.sprite_fifo.unaligned_objx > 0 {
+            if let Some(_) = self.sprite_fifo.pop() {
+                self.sprite_fifo.unaligned_objx -= 1;
+            }
+            return;
+        }
+
         if let Some(bg_pixel) = self.fifo.pop() {
             match self.sprite_fifo.pop() {
-                Some(_) if self.sprite_fifo.unaligned_objx > 0 => {
-                    self.sprite_fifo.unaligned_objx -= 1;
-                    self.draw_pixel(bg_pixel);
-                }
                 Some(obj_pixel) => {
                     self.mix_and_draw_pixel(bg_pixel, obj_pixel);
                 }
@@ -417,7 +434,8 @@ impl Gpu {
             }
             FetcherState::ReadTileNumber => {
                 let ly = self.position.ly;
-                let sprite = &self.sprites[self.cmp_idx - 1];
+                let i = self.oam_search.next_loc();
+                let sprite = Sprite::from(&self.oam[i * 4..(i + 1) * 4]);
 
                 let tile_idx = if self.lcdc.obj_size != 0 {
                     sprite.number & 0xFE
@@ -441,7 +459,8 @@ impl Gpu {
                 self.sprite_fetcher.state = FetcherState::ReadTileDataLow;
             }
             FetcherState::ReadTileDataLow => {
-                let sprite = &self.sprites[self.cmp_idx - 1];
+                let i = self.oam_search.next_loc();
+                let sprite = Sprite::from(&self.oam[i * 4..(i + 1) * 4]);
                 let bank = sprite.vram_bank;
 
                 self.sprite_fetcher.low = match self.emu_mode {
@@ -455,7 +474,8 @@ impl Gpu {
                 self.sprite_fetcher.state = FetcherState::ReadTileDataHigh;
             }
             FetcherState::ReadTileDataHigh => {
-                let sprite = &self.sprites[self.cmp_idx - 1];
+                let i = self.oam_search.next_loc();
+                let sprite = Sprite::from(&self.oam[i * 4..(i + 1) * 4]);
                 let bank = sprite.vram_bank;
 
                 self.sprite_fetcher.high = match self.emu_mode {
@@ -469,7 +489,8 @@ impl Gpu {
                 self.sprite_fetcher.state = FetcherState::Push(1);
             }
             FetcherState::Push(1) => {
-                let sprite = self.sprites[self.cmp_idx - 1].clone();
+                let i = self.oam_search.next_loc();
+                let sprite = Sprite::from(&self.oam[i * 4..(i + 1) * 4]);
 
                 let palette = if sprite.obp1 {
                     self.dmgp.obp1
@@ -477,7 +498,7 @@ impl Gpu {
                     self.dmgp.obp0
                 };
 
-                self.sprite_fifo.push_row(
+                self.push_sprite_row(
                     self.sprite_fetcher.low,
                     self.sprite_fetcher.high,
                     sprite,
@@ -485,37 +506,79 @@ impl Gpu {
                 );
 
                 self.fetching_sprite = false;
+                self.sprite_fetcher.i += 1;
                 self.sprite_fetcher.state = FetcherState::Sleep(0);
+
+                self.oam_search.advance_loc();
                 self.check_sprite_comparators();
             }
             _ => (),
         }
     }
 
-    fn check_sprite_comparators(&mut self) {
-        // Sprite invariants
-        // if sprite1.x < sprite2.x
-        // sprite1 drawn before sprite2 (sprite1 comparator will trigger first)
-        // is this correct?
-        // 1. sprite1 before sprite2 in OAM - correct DMG, CGB
-        // 2. sprite2 before sprite1 in OAM - correct DMG, not CGB
+    pub fn push_sprite_row(&mut self, mut low: u8, mut high: u8, sprite: Sprite, palette: u8) {
+        for i in 0..8 {
+            let value;
 
-        if !self.lcdc.obj_enabled() {
-            self.fetching_sprite = false;
-            return;
-        }
+            if sprite.mirror_horizontal {
+                value = ((high & 1) << 1) | (low & 1);
+                low >>= 1;
+                high >>= 1;
+            } else {
+                value = ((high >> 7) << 1) | (low >> 7);
+                low <<= 1;
+                high <<= 1;
+            }
 
-        while self.cmp_idx < self.sprite_comparators.len() {
-            self.cmp_idx += 1;
-            if self.sprite_comparators[self.cmp_idx - 1] == self.position.lx + 8 {
-                self.sprite_fetcher.restart();
-                self.fetching_sprite = true;
-                return;
+            let pixel_type = if value == 0 {
+                PixelType::SpriteColor0
+            } else {
+                PixelType::SpriteOpaque
+            };
+
+            let new_item = PixelFifoItem {
+                value,
+                palette,
+                pixel_type,
+                obj_to_bg_prio: sprite.obj_to_bg_prio,
+            };
+
+            if self.sprite_fifo.q.len() <= i {
+                // if FIFO is empty, push back pixel
+                self.sprite_fifo.q.push_back(new_item);
+            } else {
+                // if FIFO not empty, replace old pixel if it's transparent
+                match &self.sprite_fifo.q[i].pixel_type {
+                    PixelType::SpriteColor0 => self.sprite_fifo.q[i] = new_item,
+                    PixelType::SpriteOpaque => {
+                        let this = self.oam_search.locations[self.sprite_fetcher.i];
+                        let prev = self.oam_search.locations[self.sprite_fetcher.i - 1];
+
+                        if self.emu_mode == EmulationMode::Cgb && this < prev {
+                            self.sprite_fifo.q[i] = new_item;
+                        }
+                    }
+                    _ => (),
+                }
             }
         }
+    }
 
-        self.fetching_sprite = false;
-        self.cmp_idx = 0;
+    fn check_sprite_comparators(&mut self) {
+        if let Some(x) = self.oam_search.next_x() {
+            if self.position.lx == 0 && x < 8 {
+                self.oam_search.advance_x();
+                if self.lcdc.obj_enabled() {
+                    self.sprite_fifo.unaligned_objx = 8 - x;
+                    self.fetching_sprite = true;
+                }
+            } else if x == self.position.lx + 8 {
+                self.oam_search.advance_x();
+                if self.lcdc.obj_enabled() {
+                    self.fetching_sprite = true;
+                }
+            }
+        }
     }
 
     fn bg_fetcher_tick(&mut self) {
@@ -623,27 +686,6 @@ impl Gpu {
         }
     }
 
-    fn load_sprites(&mut self) {
-        self.cmp_idx = 0;
-
-        let ly = self.position.ly;
-        let height = if self.lcdc.obj_size == 0 { 8 } else { 16 };
-
-        let mut sprites: Vec<_> = (0..40)
-            .map(|i| (i, Sprite::from(&self.oam[i * 4..(i + 1) * 4])))
-            .filter(|(_, s)| (ly + 16 >= s.y) && (ly + 16 < s.y + height))
-            .take(10)
-            .collect();
-
-        sprites.sort_by_key(|(i, s)| match self.emu_mode {
-            EmulationMode::Dmg => (s.x, *i),
-            EmulationMode::Cgb => (*i as u8, 0),
-        });
-
-        self.sprite_comparators = sprites.iter().map(|(_, s)| s.x).collect();
-        self.sprites = sprites.into_iter().map(|(_, s)| s).collect();
-    }
-
     fn update_screen_row(&mut self, x: usize, r: u8, g: u8, b: u8) {
         let ly = self.position.ly as usize;
         self.lcd[ly * SCREEN_WIDTH * SCREEN_DEPTH + x * SCREEN_DEPTH + 0] = r;
@@ -702,15 +744,49 @@ impl Gpu {
     }
 
     // Mode 2 - OAM Search
-    fn oam_search_tick(&mut self, cycles: usize) -> usize {
-        if self.clock + cycles >= 80 {
-            let cycles_left = self.clock + cycles - 80;
+    fn oam_search_tick(&mut self, mut cycles: usize) -> usize {
+        while cycles > 0 && self.clock < 80 {
+            cycles -= 1;
+            self.clock += 1;
+
+            if self.oam_search.comparators.len() >= 10 {
+                continue;
+            }
+
+            match self.oam_search.state {
+                OamSearchState::Sleep => self.oam_search.state = OamSearchState::Search,
+                OamSearchState::Search => {
+                    let i = self.oam_search.i;
+                    let sprite = Sprite::from(&self.oam[i * 4..(i + 1) * 4]);
+
+                    let y = self.position.ly + 16;
+                    let height = if self.lcdc.obj_size == 0 { 8 } else { 16 };
+
+                    if (y >= sprite.y) && (y < sprite.y + height) {
+                        let mut j = 0;
+                        while j < self.oam_search.comparators.len() {
+                            if self.oam_search.comparators[j] <= sprite.x {
+                                j += 1
+                            } else {
+                                break;
+                            }
+                        }
+
+                        self.oam_search.comparators.insert(j, sprite.x);
+                        self.oam_search.locations.insert(j, i);
+                    }
+
+                    self.oam_search.i += 1;
+                    self.oam_search.state = OamSearchState::Sleep;
+                }
+            }
+        }
+
+        if self.clock >= 80 {
             self.clock = 0;
-            self.load_sprites();
             self.change_mode(GpuMode::PixelTransfer);
-            cycles_left
+            cycles
         } else {
-            self.clock += cycles;
             0
         }
     }
@@ -740,6 +816,7 @@ impl Gpu {
             let cycles_left = self.clock + cycles - (204 - (self.mode3_cycles - 172));
             self.clock = 0;
             self.position.ly += 1;
+            self.oam_search.restart();
             self.check_coincidence();
 
             if self.position.ly > 143 {
@@ -800,8 +877,10 @@ impl Gpu {
                 self.position.lx = 0;
                 self.fifo.restart();
                 self.bg_fetcher.restart();
+                self.sprite_fifo.restart();
                 self.sprite_fetcher.restart();
                 self.drawing_window = false;
+                self.fetching_sprite = false;
                 self.fifo.unaligned_scx = self.position.scroll_x % 8;
 
                 if self.is_win_enabled()
@@ -813,6 +892,8 @@ impl Gpu {
                 } else {
                     self.fifo.unaligned_winx = 0;
                 }
+
+                self.check_sprite_comparators();
             }
             GpuMode::HBlank => {
                 if self.stat.hblank_int != 0 {
@@ -850,6 +931,11 @@ impl Gpu {
                 self.lcdc.display_enable = value & 0x80;
                 if old_display_enable != 0 && self.lcdc.display_enable == 0 {
                     self.change_mode(GpuMode::HBlank);
+                    self.sprite_fetcher.restart();
+                    self.sprite_fifo.restart();
+                    self.bg_fetcher.restart();
+                    self.fifo.restart();
+                    self.fetching_sprite = false;
                     self.position.ly = 0;
                     self.win_counter = 0;
                     self.clock = 0;
