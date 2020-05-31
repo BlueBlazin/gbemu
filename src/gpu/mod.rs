@@ -270,7 +270,7 @@ pub struct Gpu {
     vram_bank: usize,
     win_counter: u8,
     pub oam_dma_active: bool,
-    stat_int_signal: u8,
+    stat_int_signal: bool,
 
     // Oam Search
     oam_search: OamSearch,
@@ -311,7 +311,7 @@ impl Gpu {
             vram_bank: 0,
             win_counter: 0,
             oam_dma_active: false,
-            stat_int_signal: 0,
+            stat_int_signal: false,
 
             // Oam Search
             oam_search: OamSearch::new(),
@@ -844,6 +844,7 @@ impl Gpu {
             let cycles_left = self.clock + cycles - 456;
             self.clock = 0;
             self.position.ly += 1;
+            self.check_coincidence();
 
             // STRANGE BEHAVIOR
             if self.position.ly == 153 {
@@ -854,6 +855,7 @@ impl Gpu {
             if self.position.ly == 1 {
                 self.position.ly = 0;
                 self.win_counter = 0;
+                self.oam_search.restart();
                 self.change_mode(GpuMode::OamSearch);
             }
 
@@ -865,18 +867,24 @@ impl Gpu {
     }
 
     fn check_coincidence(&mut self) {
+        let old_signal = self.stat_int_signal;
+
         if self.position.ly == self.position.lyc {
             self.stat.coincident = 0x04;
-            if self.stat.lyc_int != 0 {
-                self.request_lcd_interrupt();
-            }
+            self.stat_int_signal = self.stat.lyc_int != 0;
+            self.stat_int_trigger(old_signal);
         }
     }
 
     fn change_mode(&mut self, mode: GpuMode) {
+        let old_signal = self.stat_int_signal;
         self.stat.mode = mode;
+
         match self.stat.mode {
-            GpuMode::OamSearch if self.stat.oam_int != 0 => self.request_lcd_interrupt(),
+            GpuMode::OamSearch if self.lcdc.display_enabled() => {
+                self.stat_int_signal = self.stat.oam_int != 0;
+                self.stat_int_trigger(old_signal);
+            }
             GpuMode::PixelTransfer => {
                 self.mode3_cycles = 0;
                 self.position.lx = 0;
@@ -900,17 +908,61 @@ impl Gpu {
 
                 self.check_sprite_comparators();
             }
-            GpuMode::HBlank => {
-                if self.stat.hblank_int != 0 {
-                    self.request_lcd_interrupt();
-                }
+            GpuMode::HBlank if self.lcdc.display_enabled() => {
+                self.stat_int_signal = self.stat.hblank_int != 0;
+                self.stat_int_trigger(old_signal);
             }
-            GpuMode::VBlank if self.stat.vblank_int != 0 => self.request_lcd_interrupt(),
+            GpuMode::VBlank if self.lcdc.display_enabled() => {
+                self.stat_int_signal = self.stat.vblank_int != 0;
+                self.stat_int_trigger(old_signal);
+            }
             _ => (),
         }
     }
 
-    fn get_stat_int_signal(&self) -> u8 {}
+    // fn change_mode2(&mut self, mode: GpuMode) {
+    //     self.stat.mode = mode;
+    //     match self.stat.mode {
+    //         GpuMode::OamSearch if self.stat.oam_int != 0 => self.request_lcd_interrupt(),
+    //         GpuMode::PixelTransfer => {
+    //             self.mode3_cycles = 0;
+    //             self.position.lx = 0;
+    //             self.fifo.restart();
+    //             self.bg_fetcher.restart();
+    //             self.sprite_fifo.restart();
+    //             self.sprite_fetcher.restart();
+    //             self.drawing_window = false;
+    //             self.fetching_sprite = false;
+    //             self.fifo.unaligned_scx = self.position.scroll_x % 8;
+
+    //             if self.is_win_enabled()
+    //                 && self.position.window_x < 7
+    //                 && self.position.window_y <= self.position.ly
+    //             {
+    //                 self.drawing_window = true;
+    //                 self.fifo.unaligned_winx = 7 - self.position.window_x;
+    //             } else {
+    //                 self.fifo.unaligned_winx = 0;
+    //             }
+
+    //             self.check_sprite_comparators();
+    //         }
+    //         GpuMode::HBlank => {
+    //             if self.stat.hblank_int != 0 {
+    //                 self.request_lcd_interrupt();
+    //             }
+    //         }
+    //         GpuMode::VBlank if self.stat.vblank_int != 0 => self.request_lcd_interrupt(),
+    //         _ => (),
+    //     }
+    // }
+
+    #[inline]
+    fn stat_int_trigger(&mut self, old_signal: bool) {
+        if !old_signal && self.stat_int_signal {
+            self.request_lcd_interrupt();
+        }
+    }
 
     #[inline]
     fn request_lcd_interrupt(&mut self) {
