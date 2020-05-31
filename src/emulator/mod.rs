@@ -36,7 +36,7 @@ impl Emulator {
         loop {
             self.cpu.frame();
             if let (Some(left), Some(right)) = self.cpu.mmu.apu.get_next_buffer() {
-                // self.play_audio_sample(left, right);
+                self.play_audio_sample(left, right);
                 break;
             }
         }

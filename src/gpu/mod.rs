@@ -270,6 +270,7 @@ pub struct Gpu {
     vram_bank: usize,
     win_counter: u8,
     pub oam_dma_active: bool,
+    stat_int_signal: u8,
 
     // Oam Search
     oam_search: OamSearch,
@@ -310,6 +311,7 @@ impl Gpu {
             vram_bank: 0,
             win_counter: 0,
             oam_dma_active: false,
+            stat_int_signal: 0,
 
             // Oam Search
             oam_search: OamSearch::new(),
@@ -350,14 +352,16 @@ impl Gpu {
         let (r, g, b) = if self.lcdc.lcdc0 == 0 {
             self.get_rgb(0, self.dmgp.bgp)
         } else {
-            self.get_rgb(pixel.value, pixel.palette)
+            self.get_rgb(pixel.value, self.dmgp.bgp)
         };
 
         self.update_screen_row(self.position.lx as usize, r, g, b);
     }
 
     fn mix_and_draw_pixel(&mut self, bg_pixel: PixelFifoItem, obj_pixel: PixelFifoItem) {
-        let sprite_hidden = if self.lcdc.lcdc0 == 0 {
+        let sprite_hidden = if self.oam_dma_active {
+            true
+        } else if self.lcdc.lcdc0 == 0 {
             false
         } else if obj_pixel.obj_to_bg_prio == 0 {
             false
@@ -369,9 +373,14 @@ impl Gpu {
         };
 
         let (r, g, b) = if obj_pixel.value != 0 && !sprite_hidden {
-            self.get_rgb(obj_pixel.value, obj_pixel.palette)
+            let palette = if obj_pixel.palette == 0 {
+                self.dmgp.obp0
+            } else {
+                self.dmgp.obp1
+            };
+            self.get_rgb(obj_pixel.value, palette)
         } else {
-            self.get_rgb(bg_pixel.value, bg_pixel.palette)
+            self.get_rgb(bg_pixel.value, self.dmgp.bgp)
         };
 
         self.update_screen_row(self.position.lx as usize, r, g, b);
@@ -492,11 +501,7 @@ impl Gpu {
                 let i = self.oam_search.next_loc();
                 let sprite = Sprite::from(&self.oam[i * 4..(i + 1) * 4]);
 
-                let palette = if sprite.obp1 {
-                    self.dmgp.obp1
-                } else {
-                    self.dmgp.obp0
-                };
+                let palette = sprite.obp1 as u8;
 
                 self.push_sprite_row(
                     self.sprite_fetcher.low,
@@ -651,7 +656,7 @@ impl Gpu {
                     }
                     let low = self.bg_fetcher.low;
                     let high = self.bg_fetcher.high;
-                    self.fifo.push_bg_row(low, high, self.dmgp.bgp);
+                    self.fifo.push_bg_row(low, high, 0);
                     self.bg_fetcher.state = FetcherState::Sleep(0);
                 }
             }
@@ -905,6 +910,8 @@ impl Gpu {
         }
     }
 
+    fn get_stat_int_signal(&self) -> u8 {}
+
     #[inline]
     fn request_lcd_interrupt(&mut self) {
         self.request_lcd_int = true;
@@ -996,11 +1003,11 @@ impl Gpu {
     pub fn get_byte(&self, addr: u16) -> u8 {
         match addr {
             0x8000..=0x9FFF => match self.stat.mode {
-                GpuMode::PixelTransfer if !self.oam_dma_active => 0x00,
+                GpuMode::PixelTransfer => 0xFF,
                 _ => self.get_vram_byte(addr, self.vram_bank),
             },
             0xFE00..=0xFE9F => match self.stat.mode {
-                GpuMode::OamSearch | GpuMode::PixelTransfer if !self.oam_dma_active => 0x00,
+                GpuMode::OamSearch | GpuMode::PixelTransfer => 0xFF,
                 _ => self.oam[(addr - OAM_OFFSET) as usize],
             },
             0xFF40 => u8::from(&self.lcdc),
