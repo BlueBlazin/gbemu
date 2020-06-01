@@ -342,6 +342,13 @@ impl Gpu {
     fn pixel_pipeline_tick(&mut self) {
         if self.fetching_sprite {
             self.sprite_fetcher_tick();
+            return;
+        }
+    }
+
+    fn pixel_pipeline_tick2(&mut self) {
+        if self.fetching_sprite {
+            self.sprite_fetcher_tick();
         } else {
             self.bg_fetcher_tick();
             self.fifo_tick();
@@ -359,9 +366,7 @@ impl Gpu {
     }
 
     fn mix_and_draw_pixel(&mut self, bg_pixel: PixelFifoItem, obj_pixel: PixelFifoItem) {
-        let sprite_hidden = if self.oam_dma_active {
-            true
-        } else if self.lcdc.lcdc0 == 0 {
+        let sprite_hidden = if self.lcdc.lcdc0 == 0 {
             false
         } else if obj_pixel.obj_to_bg_prio == 0 {
             false
@@ -867,95 +872,61 @@ impl Gpu {
     }
 
     fn check_coincidence(&mut self) {
-        let old_signal = self.stat_int_signal;
-
         if self.position.ly == self.position.lyc {
             self.stat.coincident = 0x04;
-            self.stat_int_signal = self.stat.lyc_int != 0;
-            self.stat_int_trigger(old_signal);
+        } else {
+            self.stat.coincident = 0;
         }
+        self.update_stat_int_signal();
     }
 
     fn change_mode(&mut self, mode: GpuMode) {
-        let old_signal = self.stat_int_signal;
         self.stat.mode = mode;
+        self.update_stat_int_signal();
 
-        match self.stat.mode {
-            GpuMode::OamSearch if self.lcdc.display_enabled() => {
-                self.stat_int_signal = self.stat.oam_int != 0;
-                self.stat_int_trigger(old_signal);
-            }
-            GpuMode::PixelTransfer => {
-                self.mode3_cycles = 0;
-                self.position.lx = 0;
-                self.fifo.restart();
-                self.bg_fetcher.restart();
-                self.sprite_fifo.restart();
-                self.sprite_fetcher.restart();
-                self.drawing_window = false;
-                self.fetching_sprite = false;
-                self.fifo.unaligned_scx = self.position.scroll_x % 8;
+        if self.stat.mode == GpuMode::PixelTransfer {
+            self.mode3_cycles = 0;
+            self.position.lx = 0;
+            self.fifo.restart();
+            self.bg_fetcher.restart();
+            self.sprite_fifo.restart();
+            self.sprite_fetcher.restart();
+            self.drawing_window = false;
+            self.fetching_sprite = false;
+            self.fifo.unaligned_scx = self.position.scroll_x % 8;
 
-                if self.is_win_enabled()
-                    && self.position.window_x < 7
-                    && self.position.window_y <= self.position.ly
-                {
-                    self.drawing_window = true;
-                    self.fifo.unaligned_winx = 7 - self.position.window_x;
-                } else {
-                    self.fifo.unaligned_winx = 0;
-                }
+            if self.is_win_enabled()
+                && self.position.window_x < 7
+                && self.position.window_y <= self.position.ly
+            {
+                self.drawing_window = true;
+                self.fifo.unaligned_winx = 7 - self.position.window_x;
+            } else {
+                self.fifo.unaligned_winx = 0;
+            }
 
-                self.check_sprite_comparators();
-            }
-            GpuMode::HBlank if self.lcdc.display_enabled() => {
-                self.stat_int_signal = self.stat.hblank_int != 0;
-                self.stat_int_trigger(old_signal);
-            }
-            GpuMode::VBlank if self.lcdc.display_enabled() => {
-                self.stat_int_signal = self.stat.vblank_int != 0;
-                self.stat_int_trigger(old_signal);
-            }
-            _ => (),
+            self.check_sprite_comparators();
         }
     }
 
-    // fn change_mode2(&mut self, mode: GpuMode) {
-    //     self.stat.mode = mode;
-    //     match self.stat.mode {
-    //         GpuMode::OamSearch if self.stat.oam_int != 0 => self.request_lcd_interrupt(),
-    //         GpuMode::PixelTransfer => {
-    //             self.mode3_cycles = 0;
-    //             self.position.lx = 0;
-    //             self.fifo.restart();
-    //             self.bg_fetcher.restart();
-    //             self.sprite_fifo.restart();
-    //             self.sprite_fetcher.restart();
-    //             self.drawing_window = false;
-    //             self.fetching_sprite = false;
-    //             self.fifo.unaligned_scx = self.position.scroll_x % 8;
+    fn update_stat_int_signal(&mut self) {
+        let old_signal = self.stat_int_signal;
 
-    //             if self.is_win_enabled()
-    //                 && self.position.window_x < 7
-    //                 && self.position.window_y <= self.position.ly
-    //             {
-    //                 self.drawing_window = true;
-    //                 self.fifo.unaligned_winx = 7 - self.position.window_x;
-    //             } else {
-    //                 self.fifo.unaligned_winx = 0;
-    //             }
+        if self.stat.coincident != 0 && self.stat.lyc_int != 0 {
+            self.stat_int_signal = true;
+            self.stat_int_trigger(old_signal);
+            return;
+        }
 
-    //             self.check_sprite_comparators();
-    //         }
-    //         GpuMode::HBlank => {
-    //             if self.stat.hblank_int != 0 {
-    //                 self.request_lcd_interrupt();
-    //             }
-    //         }
-    //         GpuMode::VBlank if self.stat.vblank_int != 0 => self.request_lcd_interrupt(),
-    //         _ => (),
-    //     }
-    // }
+        self.stat_int_signal = match self.stat.mode {
+            GpuMode::OamSearch => self.stat.oam_int != 0,
+            GpuMode::HBlank => self.stat.hblank_int != 0,
+            GpuMode::VBlank => self.stat.vblank_int != 0,
+            _ => false,
+        };
+
+        self.stat_int_trigger(old_signal);
+    }
 
     #[inline]
     fn stat_int_trigger(&mut self, old_signal: bool) {
@@ -1013,6 +984,7 @@ impl Gpu {
                 self.stat.oam_int = value & 0x20;
                 self.stat.vblank_int = value & 0x10;
                 self.stat.hblank_int = value & 0x08;
+                self.update_stat_int_signal();
             }
             0xFF42 => self.position.scroll_y = value,
             0xFF43 => self.position.scroll_x = value,

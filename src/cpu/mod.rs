@@ -260,15 +260,19 @@ impl Cpu {
                 self.add_cycles(4);
             }
 
+            self.add_cycles(12);
+
             // -----------------------------------------------------------
             // * Edge case
             // -----------------------------------------------------------
 
             self.sp = self.sp.wrapping_sub(1);
-            self.mmu.set_byte(self.sp, (self.pc >> 8) as u8);
+            // self.mmu.set_byte(self.sp, (self.pc >> 8) as u8);
+            self.memory_set(self.sp, (self.pc >> 8) as u8);
             ints = self.mmu.get_byte(0xFFFF) & irr & 0x1F;
             self.sp = self.sp.wrapping_sub(1);
-            self.mmu.set_byte(self.sp, (self.pc & 0xFF) as u8);
+            // self.mmu.set_byte(self.sp, (self.pc & 0xFF) as u8);
+            self.memory_set(self.sp, (self.pc & 0xFF) as u8);
             // If SP was IF, pushing lower byte of PC modified IF.
             ints &= if self.sp == 0xFF0F {
                 irr & 0x1F
@@ -296,7 +300,7 @@ impl Cpu {
         self.ime = false;
         self.mmu.set_byte(0xFF0F, irr & !mask);
         self.pc = 0x40 + 8 * i;
-        self.add_cycles(20);
+        // self.add_cycles(20);
     }
 
     fn leave_stop_mode(&mut self) {
