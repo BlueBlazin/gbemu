@@ -1260,15 +1260,6 @@ impl Cpu {
     // -------------------------------------------------------------
 
     fn add_cycles(&mut self, cycles: usize) {
-        //     In Double Speed Mode the following will operate twice as fast as normal:
-        //     The CPU (2.10 MHz, 1 Cycle = approx. 0.5us)
-        //     Timer and Divider Registers
-        //     DMA Transfer to OAM
-
-        //    And the following will keep operating as usual:
-        //    LCD Video Controller
-        //    HDMA Transfer to VRAM
-        //    All Sound Timings and Frequencies
         self.cycles += cycles;
 
         self.mmu.timer_tick(cycles);
@@ -1412,26 +1403,34 @@ mod tests {
         // let rom = fs::read("roms/acceptance/ei_timing.gb").unwrap();
         // let rom = fs::read("roms/interrupt_time.gb").unwrap();
         // let rom = fs::read("roms/Aladdin (USA).gbc").unwrap();
-        // let rom = fs::read("roms/dmg-acid2.gb").unwrap();
+        let rom = fs::read("roms/dmg-acid2.gb").unwrap();
+        // let rom = fs::read("roms/Tetris.gb").unwrap();
+        // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
         // let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
-        let rom = fs::read("roms/Prehistorik Man (USA, Europe).gb").unwrap();
+        // let rom = fs::read("roms/Prehistorik Man (USA, Europe).gb").unwrap();
         println!("{:#X}", rom[0x147]);
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         println!("Starting");
 
-        let mut i = 0;
+        // let mut i = 0;
 
         loop {
-            i += 1;
-            if i > 10_000_000 && i < 10_000_050 {
-                println!(
-                    "pc: {:#X}, opcode: {:#X}, halted: {}",
-                    cpu.pc,
-                    cpu.mmu.get_byte(cpu.pc),
-                    cpu.halted
-                );
-            }
+            // i += 1;
+            // if i > 10_000_000 && i < 10_000_050 {
+            //     println!(
+            //         "pc: {:#X}, opcode: {:#X}, halted: {}",
+            //         cpu.pc,
+            //         cpu.mmu.get_byte(cpu.pc),
+            //         cpu.halted
+            //     );
+            // }
+            // println!(
+            //     "pc: {:#X}, opcode: {:#X}, halted: {}",
+            //     cpu.pc,
+            //     cpu.mmu.get_byte(cpu.pc),
+            //     cpu.halted
+            // );
             cpu.tick();
         }
     }

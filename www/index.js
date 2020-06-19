@@ -118,12 +118,22 @@ function emulate(romData) {
   const screenPtr = gb.screen();
   let start = null;
 
+  let maxTime = 0;
+  let counter = 0;
+
   function renderLoop(timestamp) {
     if (!start) start = timestamp;
     const delta = timestamp - start;
     // console.log(1000 / delta);
     // Update emulator
+    const before = performance.now();
     gb.update();
+    let timeDelta = performance.now() - before;
+    if (counter < 2 || timeDelta > maxTime) {
+      counter++;
+      maxTime = timeDelta;
+      console.log(maxTime);
+    }
     // Draw Screen
     drawScreen(screenPtr);
     start = timestamp;

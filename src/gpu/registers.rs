@@ -108,13 +108,13 @@ impl From<&LcdStatus> for u8 {
 
 #[derive(Default)]
 pub struct LcdPosition {
-    pub scroll_y: u8,
-    pub scroll_x: u8,
+    pub scy: u8,
+    pub scx: u8,
     pub ly: u8,
     pub lx: u8,
     pub lyc: u8,
-    pub window_y: u8,
-    pub window_x: u8,
+    pub wy: u8,
+    pub wx: u8,
 }
 
 #[derive(Default)]
