@@ -14,7 +14,7 @@ pub struct LcdControl {
     pub display_enable: u8,
     pub win_tilemap_sel: u8,
     pub win_display_enable: u8,
-    pub bg_tiledata_sel: u8,
+    pub tiledata_sel: u8,
     pub bg_tilemap_sel: u8,
     pub obj_size: u8,
     pub obj_display_enable: u8,
@@ -59,7 +59,7 @@ impl From<&LcdControl> for u8 {
         0x0 | lcdc.display_enable
             | lcdc.win_tilemap_sel
             | lcdc.win_display_enable
-            | lcdc.bg_tiledata_sel
+            | lcdc.tiledata_sel
             | lcdc.bg_tilemap_sel
             | lcdc.obj_size
             | lcdc.obj_display_enable
