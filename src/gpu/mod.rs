@@ -1,4 +1,3 @@
-pub mod fifo;
 pub mod registers;
 pub mod tiles;
 
@@ -23,7 +22,7 @@ pub enum GpuMode {
     PixelTransfer,
     HBlank,
     VBlank,
-    InitScanline,
+    InitPixelTransfer,
 }
 
 impl From<&GpuMode> for u8 {
@@ -32,8 +31,8 @@ impl From<&GpuMode> for u8 {
             GpuMode::HBlank => 0,
             GpuMode::VBlank => 1,
             GpuMode::OamSearch => 2,
+            GpuMode::InitPixelTransfer => 3,
             GpuMode::PixelTransfer => 3,
-            GpuMode::InitScanline => 4,
         }
     }
 }
@@ -226,7 +225,7 @@ impl Gpu {
         while cycles > 0 {
             match self.stat.mode {
                 GpuMode::OamSearch => cycles = self.run_oam_search(cycles),
-                GpuMode::InitScanline => cycles = self.run_init_scanline(cycles),
+                GpuMode::InitPixelTransfer => cycles = self.run_init_pixel_transfer(cycles),
                 GpuMode::PixelTransfer => cycles = self.run_pixel_transfer(cycles),
                 GpuMode::HBlank => cycles = self.run_hblank(cycles),
                 GpuMode::VBlank => cycles = self.run_vblank(cycles),
@@ -259,7 +258,7 @@ impl Gpu {
             }
 
             if self.clock == 80 {
-                self.change_mode(GpuMode::InitScanline);
+                self.change_mode(GpuMode::InitPixelTransfer);
                 return cycles;
             }
         }
@@ -283,7 +282,7 @@ impl Gpu {
         self.locations.insert(i, self.search_idx);
     }
 
-    fn run_init_scanline(&mut self, cycles: usize) -> usize {
+    fn run_init_pixel_transfer(&mut self, cycles: usize) -> usize {
         if self.clock + cycles >= 4 {
             let cycles_left = self.clock + cycles - 4;
             self.mode3_clocks = 4;
@@ -297,6 +296,7 @@ impl Gpu {
             cycles_left
         } else {
             self.clock += cycles;
+
             0
         }
     }
@@ -453,6 +453,7 @@ impl Gpu {
     }
 
     fn run_hblank(&mut self, cycles: usize) -> usize {
+        println!("mode 3 clocks: {}", self.mode3_clocks);
         let mode3_penalty = self.mode3_clocks - 172;
         let hblank_clocks = 204 - mode3_penalty;
 
@@ -750,7 +751,6 @@ impl Gpu {
     }
 }
 
-// pub mod fifo;
 // pub mod registers;
 // pub mod tiles;
 
@@ -774,6 +774,7 @@ impl Gpu {
 //     PixelTransfer,
 //     HBlank,
 //     VBlank,
+//     InitScanline,
 // }
 
 // impl From<&GpuMode> for u8 {
@@ -783,6 +784,7 @@ impl Gpu {
 //             GpuMode::VBlank => 1,
 //             GpuMode::OamSearch => 2,
 //             GpuMode::PixelTransfer => 3,
+//             GpuMode::InitScanline => 4,
 //         }
 //     }
 // }
@@ -821,57 +823,6 @@ impl Gpu {
 //         self.low = 0;
 //         self.high = 0;
 //         self.x = 0;
-//     }
-// }
-
-// pub struct SpriteFetcher {
-//     state: FetcherState,
-//     addr: u16,
-//     low: u8,
-//     high: u8,
-//     i: usize,
-// }
-
-// impl SpriteFetcher {
-//     pub fn new() -> Self {
-//         Self {
-//             state: FetcherState::Sleep(0),
-//             addr: 0,
-//             low: 0,
-//             high: 0,
-//             i: 0,
-//         }
-//     }
-
-//     pub fn restart(&mut self) {
-//         self.state = FetcherState::Sleep(0);
-//         self.addr = 0;
-//         self.low = 0;
-//         self.high = 0;
-//         self.i = 0;
-//     }
-// }
-
-// pub struct SpriteFifo {
-//     pub q: VecDeque<PixelFifoItem>,
-//     pub unaligned_objx: u8,
-// }
-
-// impl SpriteFifo {
-//     pub fn new() -> Self {
-//         Self {
-//             q: VecDeque::with_capacity(8),
-//             unaligned_objx: 0,
-//         }
-//     }
-
-//     pub fn restart(&mut self) {
-//         self.q.clear();
-//         self.unaligned_objx = 0;
-//     }
-
-//     pub fn pop(&mut self) -> Option<PixelFifoItem> {
-//         self.q.pop_front()
 //     }
 // }
 
@@ -943,63 +894,7 @@ impl Gpu {
 //         } else {
 //             self.q.pop_front()
 //         }
-//     }
-// }
-
-// pub enum OamSearchState {
-//     Sleep,
-//     Search,
-// }
-
-// pub struct OamSearch {
-//     pub state: OamSearchState,
-//     pub comparators: Vec<u8>,
-//     pub locations: Vec<usize>,
-//     pub i: usize,
-//     j: usize,
-//     k: usize,
-// }
-
-// impl OamSearch {
-//     pub fn new() -> Self {
-//         Self {
-//             state: OamSearchState::Sleep,
-//             comparators: Vec::with_capacity(10),
-//             locations: Vec::with_capacity(10),
-//             i: 0,
-//             j: 0,
-//             k: 0,
-//         }
-//     }
-
-//     pub fn restart(&mut self) {
-//         self.state = OamSearchState::Sleep;
-//         self.comparators = Vec::with_capacity(10);
-//         self.locations = Vec::with_capacity(10);
-//         self.i = 0;
-//         self.j = 0;
-//         self.k = 0;
-//     }
-
-//     pub fn next_x(&mut self) -> Option<u8> {
-//         if self.j < self.comparators.len() {
-//             let x = self.comparators[self.j];
-//             Some(x)
-//         } else {
-//             None
-//         }
-//     }
-
-//     pub fn advance_x(&mut self) {
-//         self.j += 1;
-//     }
-
-//     pub fn next_loc(&mut self) -> usize {
-//         self.locations[self.k]
-//     }
-
-//     pub fn advance_loc(&mut self) {
-//         self.k += 1;
+//         // self.q.pop_front()
 //     }
 // }
 
@@ -1026,22 +921,14 @@ impl Gpu {
 //     stat_int_signal: bool,
 //     lyc_int_signal: bool,
 
-//     // Oam Search
-//     oam_search: OamSearch,
-
 //     // Pixel Pipeline
-//     mode3_cycles: usize,
+//     mode3_clocks: usize,
 //     drawing_window: bool,
 //     fifo: PixelFifo,
 
 //     // Background
 //     window_was_drawn: bool,
 //     bg_fetcher: BgFetcher,
-
-//     // Sprites
-//     sprite_fetcher: SpriteFetcher,
-//     sprite_fifo: SpriteFifo,
-//     fetching_sprite: bool,
 
 //     comparators: Vec<i16>,
 //     locations: Vec<usize>,
@@ -1075,21 +962,13 @@ impl Gpu {
 //             stat_int_signal: false,
 //             lyc_int_signal: false,
 
-//             // Oam Search
-//             oam_search: OamSearch::new(),
-
 //             // Pixel Pipeline
-//             mode3_cycles: 0,
+//             mode3_clocks: 0,
 //             drawing_window: false,
 //             fifo: PixelFifo::new(),
 //             // Background
 //             window_was_drawn: false,
 //             bg_fetcher: BgFetcher::new(),
-
-//             // Sprites
-//             sprite_fetcher: SpriteFetcher::new(),
-//             sprite_fifo: SpriteFifo::new(),
-//             fetching_sprite: false,
 
 //             comparators: vec![],
 //             locations: vec![],
@@ -1115,9 +994,11 @@ impl Gpu {
 //         while cycles > 0 {
 //             match self.stat.mode {
 //                 GpuMode::OamSearch => cycles = self.run_oam_search(cycles),
+//                 // GpuMode::InitScanline => cycles = self.run_init_scanline(cycles),
 //                 GpuMode::PixelTransfer => cycles = self.run_pixel_transfer(cycles),
 //                 GpuMode::HBlank => cycles = self.run_hblank(cycles),
 //                 GpuMode::VBlank => cycles = self.run_vblank(cycles),
+//                 _ => (),
 //             }
 //         }
 //     }
@@ -1170,19 +1051,29 @@ impl Gpu {
 //         self.locations.insert(i, self.search_idx);
 //     }
 
+//     fn run_init_scanline(&mut self, cycles: usize) -> usize {
+//         if self.clock + cycles >= 4 {
+//             let cycles_left = self.clock + cycles - 4;
+//             self.mode3_clocks = 4;
+
+//             self.change_mode(GpuMode::PixelTransfer);
+
+//             cycles_left
+//         } else {
+//             self.clock += cycles;
+//             0
+//         }
+//     }
+
 //     // Mode 3 - Pixel Transfer
 //     fn run_pixel_transfer(&mut self, mut cycles: usize) -> usize {
 //         while cycles > 0 {
 //             cycles -= 1;
-//             self.mode3_cycles += 1;
+//             self.mode3_clocks += 1;
 
 //             self.pixel_transfer_tick();
 
 //             if (self.position.lx as usize) == 160 {
-//                 if self.window_was_drawn {
-//                     self.update_window_counter();
-//                     self.window_was_drawn = false;
-//                 }
 //                 self.change_mode(GpuMode::HBlank);
 //                 return cycles;
 //             }
@@ -1192,13 +1083,6 @@ impl Gpu {
 //     }
 
 //     fn pixel_transfer_tick(&mut self) {
-//         if false && !self.drawing_window && self.is_win_enabled() && self.is_win_pixel() {
-//             self.fifo.restart();
-//             self.bg_fetcher.restart();
-//             self.drawing_window = true;
-//             self.fifo.unaligned_winx = (self.position.lx + 7 - self.position.wx) % 8;
-//         }
-
 //         self.fetcher_tick();
 //         self.fifo_tick();
 //     }
@@ -1292,17 +1176,6 @@ impl Gpu {
 
 //                 self.bg_fetcher.high = self.get_vram_byte(tile_addr + row as u16 * 2 + 1, 0);
 //                 self.bg_fetcher.state = FetcherState::Push(0);
-
-//                 if self.tmp >= 0 && self.tmp < 40 {
-//                     println!(
-//                         "{}: {:#X}, ly: {}",
-//                         self.tmp + 1,
-//                         tile_addr + row as u16 * 2,
-//                         self.position.ly
-//                     );
-//                 }
-
-//                 self.tmp += 1;
 //             }
 //             // Push tile row data to pixel FIFO
 //             FetcherState::Push(0) => {
@@ -1335,12 +1208,12 @@ impl Gpu {
 //     }
 
 //     fn run_hblank(&mut self, cycles: usize) -> usize {
-//         let mode3_penalty = self.mode3_cycles - 172;
+//         println!("mode 3 clocks: {}", self.mode3_clocks);
+//         let mode3_penalty = self.mode3_clocks - 172;
 //         let hblank_clocks = 204 - mode3_penalty;
 
 //         if self.clock + cycles >= hblank_clocks {
 //             let cycles_left = self.clock + cycles - hblank_clocks;
-//             self.clock = 0;
 //             self.position.ly += 1;
 //             self.update_stat_int_signal();
 
@@ -1395,6 +1268,7 @@ impl Gpu {
 
 //     fn change_mode(&mut self, mode: GpuMode) {
 //         self.stat.mode = mode;
+//         self.clock = 0;
 
 //         match self.stat.mode {
 //             GpuMode::OamSearch => {
@@ -1403,23 +1277,12 @@ impl Gpu {
 //                 self.search_idx = 0;
 //             }
 //             GpuMode::PixelTransfer => {
-//                 self.mode3_cycles = 0;
+//                 self.mode3_clocks = 0;
 //                 self.position.lx = 0;
 //                 self.fifo.restart();
 //                 self.bg_fetcher.restart();
 //                 self.drawing_window = false;
 //                 self.fifo.unaligned_scx = self.position.scx % 8;
-
-//                 if false
-//                     && self.is_win_enabled()
-//                     && self.position.wx < 7
-//                     && self.position.wy <= self.position.ly
-//                 {
-//                     self.drawing_window = true;
-//                     self.fifo.unaligned_winx = 7 - self.position.wx;
-//                 } else {
-//                     self.fifo.unaligned_winx = 0;
-//                 }
 //             }
 //             _ => (),
 //         }
@@ -1495,15 +1358,12 @@ impl Gpu {
 //                 let old_display_enable = self.lcdc.display_enable;
 //                 self.lcdc.display_enable = value & 0x80;
 //                 if old_display_enable != 0 && self.lcdc.display_enable == 0 {
+//                     println!("YES\n\n");
 //                     self.change_mode(GpuMode::HBlank);
-//                     self.sprite_fetcher.restart();
-//                     self.sprite_fifo.restart();
 //                     self.bg_fetcher.restart();
 //                     self.fifo.restart();
-//                     self.fetching_sprite = false;
 //                     self.position.ly = 0;
 //                     self.win_counter = 0;
-//                     self.clock = 0;
 //                     self.clear_screen();
 //                 }
 //                 self.lcdc.win_tilemap_sel = value & 0x40;
@@ -1624,23 +1484,5 @@ impl Gpu {
 //     #[inline]
 //     fn request_vblank_interrupt(&mut self) {
 //         self.request_vblank_int = true;
-//     }
-
-//     fn is_win_enabled(&self) -> bool {
-//         self.lcdc.window_enabled(&self.emu_mode)
-//             && (self.position.wx < 167)
-//             && (self.position.wy < 144)
-//     }
-
-//     #[inline]
-//     fn is_win_pixel(&self) -> bool {
-//         self.position.wx <= (self.position.lx + 7) as u8 && self.position.wy <= self.position.ly
-//     }
-
-//     #[inline]
-//     fn update_window_counter(&mut self) {
-//         if self.is_win_enabled() && self.position.wy <= self.position.ly {
-//             self.win_counter += 1;
-//         }
 //     }
 // }
