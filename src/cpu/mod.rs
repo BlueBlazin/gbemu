@@ -1406,8 +1406,8 @@ mod tests {
         // let rom = fs::read("roms/dmg-acid2.gb").unwrap();
         // let rom = fs::read("roms/Tetris.gb").unwrap();
         // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
-        let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
-        // let rom = fs::read("roms/Prehistorik Man (USA, Europe).gb").unwrap();
+        // let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
+        let rom = fs::read("roms/Prehistorik Man (USA, Europe).gb").unwrap();
         println!("{:#X}", rom[0x147]);
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();

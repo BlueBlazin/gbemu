@@ -1,7 +1,7 @@
 use crate::apu::Apu;
 use crate::cartridge::Cartridge;
 use crate::cpu::{CgbMode, EmulationMode};
-use crate::gpu::{Gpu, GpuMode};
+use crate::gpu::{Gpu, GpuMode, OAM_OFFSET};
 use crate::joypad::Joypad;
 use crate::memory::bootrom::Bootrom;
 use crate::memory::wram::Wram;
@@ -155,7 +155,8 @@ impl Mmu {
 
             let offset = self.oam_dma.i;
             let value = self.get_byte(self.oam_dma.src_addr + offset);
-            self.gpu.set_byte(0xFE00 + offset, value);
+            // self.gpu.set_byte(0xFE00 + offset, value);
+            self.gpu.oam[(0xFE00 + offset - OAM_OFFSET) as usize] = value;
 
             self.oam_dma.i += 1;
             if self.oam_dma.i == 160 {
