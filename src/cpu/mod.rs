@@ -257,10 +257,12 @@ impl Cpu {
             if self.halted {
                 // HALT behavior 1 -- IME set
                 self.halted = false;
-                self.add_cycles(4);
+                // self.add_cycles(4);
             }
 
-            self.add_cycles(12);
+            self.add_cycles(4);
+            self.add_cycles(4);
+            self.add_cycles(4);
 
             // -----------------------------------------------------------
             // * Edge case
