@@ -621,8 +621,8 @@ impl Cpu {
 
     #[inline]
     pub fn jp_addr(&mut self, addr: u16) {
-        self.add_cycles(4);
         self.pc = addr;
+        self.add_cycles(4);
     }
 
     pub fn jp_nn(&mut self) {
