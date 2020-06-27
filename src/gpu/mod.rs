@@ -258,7 +258,7 @@ pub struct Gpu {
     cancel_sprite_fetch: bool,
     sprite0_penalty: u8,
 
-    tot_cycles: usize,
+    pub print_hblank: bool,
 }
 
 impl Gpu {
@@ -306,7 +306,7 @@ impl Gpu {
             cancel_sprite_fetch: false,
             sprite0_penalty: 0,
 
-            tot_cycles: 0,
+            print_hblank: false,
         }
     }
 
@@ -336,7 +336,6 @@ impl Gpu {
 
     fn run_oam_search(&mut self, mut cycles: usize) -> usize {
         while cycles > 0 {
-            self.tot_cycles += 1;
             cycles -= 1;
             self.clock += 1;
 
@@ -760,7 +759,8 @@ impl Gpu {
         self.clock = 0;
         self.stat.mode = mode;
 
-        // if self.stat.mode != GpuMode::PixelTransfer {
+        // if self.stat.mode != GpuMode::PixelTransfer && self.stat.mode != GpuMode::InitPixelTransfer
+        // {
         //     self.update_stat_int_signal();
         // }
         self.update_stat_int_signal();
@@ -900,6 +900,15 @@ impl Gpu {
                 self.lcdc.lcdc0 = value & 0x01;
             }
             0xFF41 => {
+                if value == 0b00100000 {
+                    println!("setup_and_wait_mode2 STAT");
+                    println!("ly: {}, lx: {}", self.position.ly, self.lx);
+                }
+                if value == 0b00001000 {
+                    println!("setup_and_wait_mode0 STAT");
+                    println!("ly: {}, lx: {}", self.position.ly, self.lx);
+                    self.print_hblank = true;
+                }
                 self.stat.lyc_int = value & 0x40;
                 self.stat.oam_int = value & 0x20;
                 self.stat.vblank_int = value & 0x10;
