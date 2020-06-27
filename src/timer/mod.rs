@@ -45,7 +45,7 @@ pub struct Timer {
     pub request_timer_int: bool,
     tima_bit: u16,
     state: TimerState,
-    state_counter: usize,
+    // state_counter: usize,
 }
 
 impl Timer {
@@ -59,17 +59,15 @@ impl Timer {
             request_timer_int: false,
             tima_bit: 9,
             state: TimerState::Running,
-            state_counter: 0,
+            // state_counter: 0,
         }
     }
 
     pub fn tick(&mut self, cycles: usize) {
-        let mut i = 0;
-        while i < cycles {
+        for _ in 0..cycles {
             let old_signal = self.signal();
-            self.divider.tick(4);
+            self.divider.tick(1);
             self.advance_state(old_signal);
-            i += 4;
         }
     }
 
@@ -93,7 +91,7 @@ impl Timer {
             self.counter = self.counter.wrapping_add(1);
             if self.counter == 0 {
                 self.state = TimerState::Reloading;
-                self.state_counter = 4;
+                // self.state_counter = 4;
             }
         }
     }

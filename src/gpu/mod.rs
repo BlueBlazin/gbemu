@@ -757,8 +757,13 @@ impl Gpu {
     }
 
     fn change_mode(&mut self, mode: GpuMode) {
-        self.stat.mode = mode;
         self.clock = 0;
+        self.stat.mode = mode;
+
+        // if self.stat.mode != GpuMode::PixelTransfer {
+        //     self.update_stat_int_signal();
+        // }
+        self.update_stat_int_signal();
 
         match self.stat.mode {
             GpuMode::OamSearch => {
@@ -790,10 +795,6 @@ impl Gpu {
                 self.sprite0_penalty = self.position.scx % 8;
             }
             _ => (),
-        }
-
-        if self.stat.mode != GpuMode::PixelTransfer {
-            self.update_stat_int_signal();
         }
     }
 
