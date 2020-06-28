@@ -258,6 +258,8 @@ pub struct Gpu {
     cancel_sprite_fetch: bool,
     sprite0_penalty: u8,
 
+    stat_int_update_pending: bool,
+
     pub print_hblank: bool,
 }
 
@@ -305,6 +307,8 @@ impl Gpu {
             obj_fifo: ObjFifo::new(),
             cancel_sprite_fetch: false,
             sprite0_penalty: 0,
+
+            stat_int_update_pending: false,
 
             print_hblank: false,
         }
@@ -361,6 +365,7 @@ impl Gpu {
 
             if self.clock == 80 {
                 self.change_mode(GpuMode::InitPixelTransfer);
+                self.update_stat_int_signal();
                 return cycles;
             }
         }
@@ -414,6 +419,7 @@ impl Gpu {
 
             if self.lx == 160 {
                 self.change_mode(GpuMode::HBlank);
+                self.stat_int_update_pending = true;
                 return cycles;
             }
         }
@@ -708,6 +714,11 @@ impl Gpu {
         let mode3_penalty = self.mode3_clocks - 172;
         let hblank_clocks = 204 - mode3_penalty;
 
+        if self.stat_int_update_pending {
+            self.update_stat_int_signal();
+            self.stat_int_update_pending = false;
+        }
+
         if self.clock + cycles >= hblank_clocks {
             let cycles_left = self.clock + cycles - hblank_clocks;
             self.position.ly += 1;
@@ -715,9 +726,12 @@ impl Gpu {
 
             if self.position.ly > 143 {
                 self.change_mode(GpuMode::VBlank);
+                self.update_stat_int_signal();
+
                 self.request_vblank_interrupt();
             } else {
                 self.change_mode(GpuMode::OamSearch);
+                self.update_stat_int_signal();
             }
 
             cycles_left
@@ -746,6 +760,7 @@ impl Gpu {
                 self.win_counter = -1;
                 self.wy_triggered = false;
                 self.change_mode(GpuMode::OamSearch);
+                self.update_stat_int_signal();
             }
 
             cycles_left
@@ -763,7 +778,7 @@ impl Gpu {
         // {
         //     self.update_stat_int_signal();
         // }
-        self.update_stat_int_signal();
+        // self.update_stat_int_signal();
 
         match self.stat.mode {
             GpuMode::OamSearch => {
@@ -876,6 +891,7 @@ impl Gpu {
                 self.lcdc.display_enable = value & 0x80;
                 if old_display_enable != 0 && self.lcdc.display_enable == 0 {
                     self.change_mode(GpuMode::HBlank);
+                    self.update_stat_int_signal();
 
                     self.position.ly = 0;
 

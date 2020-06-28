@@ -459,7 +459,10 @@ impl Cpu {
 
     fn handle_interrupt(&mut self, irr: u8, i: u16) {
         if i == 1 && self.mmu.gpu.print_hblank {
-            println!("STAT HBlank interrupt");
+            println!(
+                "STAT HBlank interrupt, next opcode: {:#X}",
+                self.mmu.get_byte(self.pc)
+            );
             self.mmu.gpu.print_hblank = false;
         }
 
