@@ -259,6 +259,7 @@ pub struct Gpu {
     sprite0_penalty: u8,
 
     tot_cycles: usize,
+    stat_int_update_pending: bool,
 }
 
 impl Gpu {
@@ -307,6 +308,7 @@ impl Gpu {
             sprite0_penalty: 0,
 
             tot_cycles: 0,
+            stat_int_update_pending: true,
         }
     }
 
@@ -335,6 +337,11 @@ impl Gpu {
     }
 
     fn run_oam_search(&mut self, mut cycles: usize) -> usize {
+        if self.stat_int_update_pending {
+            self.update_stat_int_signal();
+            self.stat_int_update_pending = false;
+        }
+
         while cycles > 0 {
             self.tot_cycles += 1;
             cycles -= 1;
@@ -388,6 +395,11 @@ impl Gpu {
     }
 
     fn run_init_pixel_transfer(&mut self, cycles: usize) -> usize {
+        if self.stat_int_update_pending {
+            self.update_stat_int_signal();
+            self.stat_int_update_pending = false;
+        }
+
         if self.clock + cycles >= 4 {
             let cycles_left = self.clock + cycles - 4;
             self.mode3_clocks = 4;
@@ -706,6 +718,11 @@ impl Gpu {
     }
 
     fn run_hblank(&mut self, cycles: usize) -> usize {
+        if self.stat_int_update_pending {
+            self.update_stat_int_signal();
+            self.stat_int_update_pending = false;
+        }
+
         let mode3_penalty = self.mode3_clocks - 172;
         let hblank_clocks = 204 - mode3_penalty;
 
@@ -730,6 +747,11 @@ impl Gpu {
 
     // Mode 1 - V-Blank
     fn run_vblank(&mut self, cycles: usize) -> usize {
+        if self.stat_int_update_pending {
+            self.update_stat_int_signal();
+            self.stat_int_update_pending = false;
+        }
+
         if self.clock + cycles >= 456 {
             let cycles_left = self.clock + cycles - 456;
             self.clock = 0;
@@ -763,7 +785,8 @@ impl Gpu {
         // if self.stat.mode != GpuMode::PixelTransfer {
         //     self.update_stat_int_signal();
         // }
-        self.update_stat_int_signal();
+        // self.update_stat_int_signal();
+        self.stat_int_update_pending = true;
 
         match self.stat.mode {
             GpuMode::OamSearch => {
@@ -909,7 +932,10 @@ impl Gpu {
             0xFF42 => self.position.scy = value,
             0xFF43 => self.position.scx = value,
             0xFF44 => (),
-            0xFF45 => self.position.lyc = value,
+            0xFF45 => {
+                self.position.lyc = value;
+                self.update_stat_int_signal();
+            }
             0xFF47 => self.dmgp.bgp = value,
             0xFF48 => self.dmgp.obp0 = value,
             0xFF49 => self.dmgp.obp1 = value,
