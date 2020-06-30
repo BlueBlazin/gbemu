@@ -258,7 +258,7 @@ pub struct Gpu {
     cancel_sprite_fetch: bool,
     sprite0_penalty: u8,
 
-    tot_cycles: usize,
+    pub tot_cycles: usize,
     stat_int_update_pending: bool,
 }
 
@@ -343,7 +343,7 @@ impl Gpu {
         }
 
         while cycles > 0 {
-            self.tot_cycles += 1;
+            // self.tot_cycles += 1;
             cycles -= 1;
             self.clock += 1;
 
@@ -401,6 +401,7 @@ impl Gpu {
         }
 
         if self.clock + cycles >= 4 {
+            // self.tot_cycles += self.clock + cycles - 4;
             let cycles_left = self.clock + cycles - 4;
             self.mode3_clocks = 4;
 
@@ -412,6 +413,7 @@ impl Gpu {
 
             cycles_left
         } else {
+            // self.tot_cycles += cycles;
             self.clock += cycles;
 
             0
@@ -420,12 +422,19 @@ impl Gpu {
 
     fn run_pixel_transfer(&mut self, mut cycles: usize) -> usize {
         while cycles > 0 {
+            // self.tot_cycles += 1;
             cycles -= 1;
             self.mode3_clocks += 1;
 
             self.pixel_transfer_tick();
 
             if self.lx == 160 {
+                // println!(
+                //     "mode 2 + 3 cycles: {}, M-cycles: {}",
+                //     self.tot_cycles,
+                //     self.tot_cycles / 4
+                // );
+                // self.tot_cycles = 0;
                 self.change_mode(GpuMode::HBlank);
                 return cycles;
             }
@@ -728,6 +737,7 @@ impl Gpu {
 
         if self.clock + cycles >= hblank_clocks {
             let cycles_left = self.clock + cycles - hblank_clocks;
+            self.tot_cycles += cycles - cycles_left;
             self.position.ly += 1;
             self.update_stat_int_signal();
 
@@ -740,6 +750,7 @@ impl Gpu {
 
             cycles_left
         } else {
+            self.tot_cycles += cycles;
             self.clock += cycles;
             0
         }
@@ -789,6 +800,9 @@ impl Gpu {
         self.stat_int_update_pending = true;
 
         match self.stat.mode {
+            GpuMode::HBlank => {
+                self.tot_cycles = 0;
+            }
             GpuMode::OamSearch => {
                 self.sprites.clear();
                 self.comparators.clear();
