@@ -75,6 +75,7 @@ pub struct Mmu {
     emu_mode: EmulationMode,
     pub cgb_mode: CgbMode,
     request_serial_int: bool,
+    oam_dma_cycles: usize,
 }
 
 impl Mmu {
@@ -95,6 +96,7 @@ impl Mmu {
             emu_mode,
             cgb_mode: CgbMode::new(),
             request_serial_int: false,
+            oam_dma_cycles: 0,
         }
     }
 
@@ -145,17 +147,18 @@ impl Mmu {
             return;
         }
 
-        if cycles >= 4 && self.oam_dma.just_launched {
+        self.oam_dma_cycles += cycles;
+
+        if self.oam_dma_cycles >= 4 && self.oam_dma.just_launched {
             self.oam_dma.just_launched = false;
-            cycles -= 4;
+            self.oam_dma_cycles -= 4;
         }
 
-        while cycles >= 4 {
-            cycles -= 4;
+        while self.oam_dma_cycles >= 4 {
+            self.oam_dma_cycles -= 4;
 
             let offset = self.oam_dma.i;
             let value = self.get_byte(self.oam_dma.src_addr + offset);
-            // self.gpu.set_byte(0xFE00 + offset, value);
             self.gpu.oam[(0xFE00 + offset - OAM_OFFSET) as usize] = value;
 
             self.oam_dma.i += 1;
@@ -354,6 +357,7 @@ impl Mmu {
 
     #[inline]
     fn activate_oam_dma(&mut self, value: u8) {
+        self.oam_dma_cycles = 0;
         self.oam_dma.active = true;
         self.oam_dma.just_launched = true;
         self.oam_dma.i = 0;

@@ -90,9 +90,10 @@ pub struct Cpu {
     emu_mode: EmulationMode,
     stopped: bool,
     halt_bug: bool,
-    ei_pending: bool,
     ime_set_pending: bool,
     just_halted: bool,
+
+    tmp_flag: bool,
 }
 
 impl Cpu {
@@ -114,9 +115,10 @@ impl Cpu {
             emu_mode,
             stopped: false,
             halt_bug: false,
-            ei_pending: false,
             ime_set_pending: false,
             just_halted: false,
+
+            tmp_flag: false,
         }
     }
 
@@ -159,33 +161,6 @@ impl Cpu {
         }
     }
 
-    // pub fn tick(&mut self) -> usize {
-    //     self.cycles = 0;
-
-    //     if self.stopped {
-    //         return self.stop_tick();
-    //     }
-
-    //     if self.halted {
-    //         return self.halt_tick();
-    //     }
-
-    //     if self.halt_bug {
-    //         self.halt_bug = false;
-    //         self.service_pending_interrupts();
-    //         self.fetch();
-    //         self.pc -= 1;
-    //     }
-
-    //     match self.mmu.hdma.hdma_type {
-    //         HdmaType::GPDma => self.gdma_tick(),
-    //         HdmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
-    //         _ => self.cpu_tick(),
-    //     }
-
-    //     self.cycles
-    // }
-
     pub fn tick(&mut self) -> usize {
         self.cycles = 0;
 
@@ -205,24 +180,6 @@ impl Cpu {
 
         self.cycles
     }
-
-    // fn cpu_tick(&mut self) {
-    //     // Check if any interrupt is requested and service it.
-    //     if self.ei_pending {
-    //         self.ei_pending = false;
-    //         self.ime_set_pending = true;
-    //     } else {
-    //         self.service_pending_interrupts();
-    //     }
-    //     // Fetch - Decode - Execute
-    //     let opcode = self.fetch();
-    //     self.decode_exec(opcode);
-
-    //     if self.ime_set_pending {
-    //         self.ime_set_pending = false;
-    //         self.ime = true;
-    //     }
-    // }
 
     fn cpu_tick(&mut self) {
         self.just_halted = false;
@@ -253,28 +210,6 @@ impl Cpu {
 
         self.decode_exec(opcode);
     }
-
-    // fn halt_tick(&mut self) -> usize {
-    //     let ie = self.mmu.get_byte(0xFFFF);
-    //     let irr = self.mmu.get_byte(0xFF0F);
-    //     let ints_pending = ie & irr & 0x1F;
-
-    //     if self.ime {
-    //         if ints_pending != 0 {
-    //             self.service_pending_interrupts();
-    //         } else {
-    //             self.add_cycles(4);
-    //         }
-    //     } else {
-    //         if ints_pending != 0 {
-    //             self.halted = false;
-    //             self.add_cycles(4);
-    //         } else {
-    //             self.add_cycles(4);
-    //         }
-    //     }
-    //     self.cycles
-    // }
 
     fn halt_tick(&mut self) -> usize {
         if self.emu_mode != EmulationMode::Cgb && !self.just_halted {
@@ -335,103 +270,25 @@ impl Cpu {
         self.add_cycles(cycles);
     }
 
-    // fn service_pending_interrupts(&mut self) {
-    //     let ie = self.mmu.get_byte(0xFFFF);
-    //     let irr = self.mmu.get_byte(0xFF0F);
-    //     let mut ints = ie & irr & 0x1F;
-
-    //     if self.ime && ints != 0 {
-    //         if self.halted {
-    //             // HALT behavior 1 -- IME set
-    //             self.halted = false;
-    //             // self.add_cycles(4);
-    //         }
-
-    //         self.add_cycles(4);
-    //         self.add_cycles(4);
-    //         self.add_cycles(4);
-
-    //         // -----------------------------------------------------------
-    //         // * Edge case
-    //         // -----------------------------------------------------------
-
-    //         self.sp = self.sp.wrapping_sub(1);
-    //         // self.mmu.set_byte(self.sp, (self.pc >> 8) as u8);
-    //         self.memory_set(self.sp, (self.pc >> 8) as u8);
-    //         ints = self.mmu.get_byte(0xFFFF) & irr & 0x1F;
-    //         self.sp = self.sp.wrapping_sub(1);
-    //         // self.mmu.set_byte(self.sp, (self.pc & 0xFF) as u8);
-    //         self.memory_set(self.sp, (self.pc & 0xFF) as u8);
-    //         // If SP was IF, pushing lower byte of PC modified IF.
-    //         ints &= if self.sp == 0xFF0F {
-    //             irr & 0x1F
-    //         } else {
-    //             self.mmu.get_byte(0xFF0F) & 0x1F
-    //         };
-
-    //         if ints == 0 {
-    //             self.pc = 0x0000;
-    //             return;
-    //         }
-
-    //         // -----------------------------------------------------------
-
-    //         for i in 0..5 {
-    //             if ints & (1u8 << i) != 0 {
-    //                 return self.handle_interrupt(irr, i);
-    //             }
-    //         }
-    //     }
-    // }
-
-    // fn service_pending_interrupts(&mut self) {
-    //     self.halted = false;
-
-    //     let irr = self.mmu.get_byte(0xFF0F);
-
-    //     self.add_cycles(4);
-    //     self.add_cycles(4);
-    //     self.add_cycles(4);
-
-    //     self.sp = self.sp.wrapping_sub(1);
-    //     self.memory_set(self.sp, (self.pc >> 8) as u8);
-
-    //     let mut ints = self.mmu.get_byte(0xFFFF) & irr & 0x1F;
-
-    //     self.sp = self.sp.wrapping_sub(1);
-    //     self.memory_set(self.sp, (self.pc & 0xFF) as u8);
-
-    //     ints &= if self.sp == 0xFF0F {
-    //         irr & 0x1F
-    //     } else {
-    //         self.mmu.get_byte(0xFF0F) & 0x1F
-    //     };
-
-    //     if ints == 0 {
-    //         self.pc = 0x0000;
-    //         return;
-    //     }
-
-    //     for i in 0..5 {
-    //         if ints & (1u8 << i) != 0 {
-    //             return self.handle_interrupt(irr, i);
-    //         }
-    //     }
-    // }
-
     fn service_pending_interrupts(&mut self) {
         self.halted = false;
 
-        let irr = self.mmu.get_byte(0xFF0F);
+        // let irr = self.mmu.get_byte(0xFF0F);
 
-        self.add_cycles(4);
-        self.add_cycles(4);
-        self.add_cycles(4);
+        // self.add_cycles(4);
+        // self.add_cycles(4);
+        // self.add_cycles(4);
 
         self.sp = self.sp.wrapping_sub(1);
-        self.memory_set(self.sp, (self.pc >> 8) as u8);
 
-        let mut ints = self.mmu.get_byte(0xFFFF);
+        // self.add_cycles(12);
+        self.add_cycles(4);
+        self.add_cycles(4);
+        self.memory_set(self.sp, (self.pc >> 8) as u8);
+        self.add_cycles(4);
+
+        // let mut ints = self.mmu.get_byte(0xFFFF);
+        let mut ints = self.mmu.ie;
 
         if self.sp == 0xFF0F + 1 {
             self.sp = self.sp.wrapping_sub(1);
@@ -452,16 +309,28 @@ impl Cpu {
             return;
         }
 
+        // let irr = self.mmu.get_byte(0xFF0F);
+
         for i in 0..5 {
             if ints & (1u8 << i) != 0 {
-                return self.handle_interrupt(irr, i);
+                return self.handle_interrupt(i);
             }
         }
     }
 
-    fn handle_interrupt(&mut self, irr: u8, i: u16) {
+    fn handle_interrupt(&mut self, i: u16) {
+        if i == 1 {
+            println!(
+                "STAT INT. Cycles: {}. Mode: {:?}. PC: {:#X}",
+                self.mmu.gpu.mode2_clocks,
+                self.mmu.gpu.mode(),
+                self.pc
+            );
+        }
+
         let mask = 1u8 << i;
         self.ime = false;
+        let irr = self.mmu.get_byte(0xFF0F);
         self.mmu.set_byte(0xFF0F, irr & !mask);
         self.pc = 0x40 + 8 * i;
     }
@@ -886,19 +755,12 @@ impl Cpu {
     //  Misc.
     // -------------------------------------------------------------
 
-    /// Enable interrupts.
-    // pub fn ei(&mut self) {
-    //     if !self.ime && !self.ei_pending {
-    //         self.ei_pending = true;
-    //     }
-    // }
     pub fn ei(&mut self) {
         if !self.ime && !self.ime_set_pending {
             self.ime_set_pending = true;
         }
     }
 
-    /// Disable inerrupts.
     pub fn di(&mut self) {
         self.ime = false;
     }
@@ -916,25 +778,12 @@ impl Cpu {
         }
     }
 
-    // pub fn halt(&mut self) {
-    //     if self.ime {
-    //         // HALT behavior 1 -- IME set
-    //         self.halted = true;
-    //     } else {
-    //         let ie = self.mmu.get_byte(0xFFFF);
-    //         let irr = self.mmu.get_byte(0xFF0F);
-
-    //         if (ie & irr & 0x1F) == 0 {
-    //             // HALT behavior 2 -- iME = 0, (IE & IF & 0x1F) = 0
-    //             self.halted = true;
-    //         } else {
-    //             // HALT behavior 3 -- iME = 0, (IE & IF & 0x1F) != 0
-    //             self.halt_bug = true;
-    //         }
-    //     }
-    // }
-
     pub fn halt(&mut self) {
+        println!(
+            "HALT. Cycles: {}. Mode: {:?}",
+            self.mmu.gpu.mode3_clocks,
+            self.mmu.gpu.mode()
+        );
         self.halted = true;
 
         let ie = self.mmu.get_byte(0xFFFF);
@@ -1192,8 +1041,8 @@ impl Cpu {
 
     pub fn cp_r8_imm(&mut self, r1: R8, value: u8) {
         let n = self.get_r8(&r1);
-        let diff = n.wrapping_sub(value);
-        self.setc_flag(Flag::Z, diff == 0);
+        // let diff = n.wrapping_sub(value);
+        self.setc_flag(Flag::Z, n == value);
         self.set_flag(Flag::N);
         self.setc_flag(Flag::H, (n & 0xF) < (value & 0xF));
         self.setc_flag(Flag::C, n < value);
@@ -1554,16 +1403,15 @@ impl Cpu {
         }
     }
 
-    #[inline]
     pub fn memory_set(&mut self, addr: u16, value: u8) {
-        self.add_cycles(4);
         self.mmu.set_byte(addr, value);
+        self.add_cycles(4);
     }
 
-    #[inline]
     pub fn memory_get(&mut self, addr: u16) -> u8 {
+        let value = self.mmu.get_byte(addr);
         self.add_cycles(4);
-        self.mmu.get_byte(addr)
+        value
     }
 }
 
@@ -1592,42 +1440,39 @@ mod tests {
         // let mut i = 0;
 
         loop {
-            // i += 1;
-            // if i > 10_000_000 && i < 10_000_050 {
-            //     println!(
-            //         "pc: {:#X}, opcode: {:#X}, halted: {}",
-            //         cpu.pc,
-            //         cpu.mmu.get_byte(cpu.pc),
-            //         cpu.halted
-            //     );
-            // }
-            // println!(
-            //     "pc: {:#X}, opcode: {:#X}, halted: {}",
-            //     cpu.pc,
-            //     cpu.mmu.get_byte(cpu.pc),
-            //     cpu.halted
-            // );
             cpu.tick();
         }
     }
 
     fn print_and_step(cpu: &mut Cpu) {
         println!(
-            "pc: {:#X}, opcode: {:#X}, halted: {}",
+            "pc: {:#X}, opcode: {:#X}, halted: {}, mode3_clocks: {}, mode: {:?}, mode2_clocks: {}",
             cpu.pc,
             cpu.mmu.get_byte(cpu.pc),
-            cpu.halted
+            cpu.halted,
+            cpu.mmu.gpu.mode3_clocks,
+            cpu.mmu.gpu.mode(),
+            cpu.mmu.gpu.mode2_clocks,
         );
-        cpu.tick();
+
+        if cpu.mmu.get_byte(cpu.pc) == 0x7E {
+            cpu.tmp_flag = true;
+            println!("STAT before: {:08b}", cpu.mmu.get_byte(0xFF41));
+            cpu.tick();
+            println!("STAT after: {:08b}", cpu.mmu.get_byte(0xFF41));
+        } else {
+            cpu.tick();
+        }
     }
 
     #[test]
     fn test_steps() {
-        let rom = fs::read("roms/interrupt_time.gb").unwrap();
+        let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         println!("Starting");
-        while cpu.pc != 0xC9C7 {
+
+        while cpu.pc != 0x17A {
             cpu.tick();
         }
         print_and_step(&mut cpu);

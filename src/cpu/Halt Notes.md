@@ -1,38 +1,22 @@
-The `HALT` instruction takes 4 cycles.
+pc: 0x16A, opcode: 0x0, halted: false, mode3_clocks: 173, mode: OamSearch, mode2_clocks: 60
+pc: 0x16B, opcode: 0x0, halted: false, mode3_clocks: 173, mode: OamSearch, mode2_clocks: 64
+pc: 0x16C, opcode: 0x6, halted: false, mode3_clocks: 173, mode: OamSearch, mode2_clocks: 68
+pc: 0x16E, opcode: 0x4, halted: false, mode3_clocks: 173, mode: OamSearch, mode2_clocks: 76
+pc: 0x16F, opcode: 0x7E, halted: false, mode3_clocks: 173, mode: InitPixelTransfer, mode2_clocks: 80
+STAT: 0000100011
+pc: 0x170, opcode: 0xE6, halted: false, mode3_clocks: 8, mode: PixelTransfer, mode2_clocks: 80
+pc: 0x172, opcode: 0xFE, halted: false, mode3_clocks: 16, mode: PixelTransfer, mode2_clocks: 80
+pc: 0x174, opcode: 0x20, halted: false, mode3_clocks: 24, mode: PixelTransfer, mode2_clocks: 80
+pc: 0x176, opcode: 0x50, halted: false, mode3_clocks: 32, mode: PixelTransfer, mode2_clocks: 80
+pc: 0x177, opcode: 0xCD, halted: false, mode3_clocks: 36, mode: PixelTransfer, mode2_clocks: 80
 
-```cpp
-static void halt(GB_gameboy_t *gb, uint8_t opcode)
-{
-    assert(gb->pending_cycles == 4);
-    gb->pending_cycles = 0;
-    GB_advance_cycles(gb, 4);
-
-    gb->halted = true;
-    /* Despite what some online documentations say, the HALT bug also happens on a CGB, in both CGB and DMG modes. */
-    if (((gb->interrupt_enable & gb->io_registers[GB_IO_IF] & 0x1F) != 0)) {
-        if (gb->ime) {
-            gb->halted = false;
-            gb->pc--;
-        }
-        else {
-            gb->halted = false;
-            gb->halt_bug = true;
-        }
-    }
-    gb->just_halted = true;
-}
-```
-
-## HALT Mode
-
-During halt mode the CPU does not fetch and execute new instructions. Halt mode is exited when the interrupt line becomes nonzero (IE & IF & 0x1F != 0). When exiting HALT, if IME is set, then the interrupt is also handled whereas if it's not set then the CPU simply exits HALT mode and resumes executing instructions as usual.
-
-## HALT Instruction
-
-The halt instruction is used to put the CPU in halt mode. The only reason to even write about it is because it has 3 different behaviors depending on IE, IF, and IME.
-
-1. IME = 1: This is the nominal case. CPU enters HALT mode. The behavior in HALT mode is detailed above.
-
-2. IME = 0:
-   - IE & IF & 0x1F == 0: As before, CPU enters HALT mode. Nothing abnormal here.
-   - IE & IF & 0x1F != 0: This results in a bug known as the HALT bug. HALT mode isn't entered, but rather the CPU fails to increase PC after the next instruction.
+pc: 0x17A, opcode: 0x0, halted: false, mode3_clocks: 173, mode: OamSearch, mode2_clocks: 56
+pc: 0x17B, opcode: 0x0, halted: false, mode3_clocks: 173, mode: OamSearch, mode2_clocks: 60
+pc: 0x17C, opcode: 0x6, halted: false, mode3_clocks: 173, mode: OamSearch, mode2_clocks: 64
+pc: 0x17E, opcode: 0x4, halted: false, mode3_clocks: 173, mode: OamSearch, mode2_clocks: 72
+pc: 0x17F, opcode: 0x7E, halted: false, mode3_clocks: 173, mode: OamSearch, mode2_clocks: 76
+pc: 0x180, opcode: 0xE6, halted: false, mode3_clocks: 173, mode: InitPixelTransfer, mode2_clocks: 80
+pc: 0x182, opcode: 0xFE, halted: false, mode3_clocks: 12, mode: PixelTransfer, mode2_clocks: 80
+pc: 0x184, opcode: 0x20, halted: false, mode3_clocks: 20, mode: PixelTransfer, mode2_clocks: 80
+pc: 0x186, opcode: 0x58, halted: false, mode3_clocks: 28, mode: PixelTransfer, mode2_clocks: 80
+pc: 0x187, opcode: 0xF3, halted: false, mode3_clocks: 32, mode: PixelTransfer, mode2_clocks: 80

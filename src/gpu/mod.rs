@@ -15,6 +15,7 @@ const SCREEN_DEPTH: usize = 4;
 const VRAM_OFFSET: u16 = 0x8000;
 pub const OAM_OFFSET: u16 = 0xFE00;
 const SCX_TO_WX0_COMPARE: [i16; 8] = [-7, -9, -10, -11, -12, -13, -14, -14];
+const CYCLES_IN_LINE: usize = 456;
 
 #[derive(Debug, PartialEq)]
 pub enum GpuMode {
@@ -240,7 +241,7 @@ pub struct Gpu {
     lyc_int_signal: bool,
 
     // new stuff
-    mode3_clocks: usize,
+    pub mode3_clocks: usize,
     lx: i16,
     bg_fifo: BgFifo,
     fetcher: Fetcher,
@@ -258,8 +259,9 @@ pub struct Gpu {
     cancel_sprite_fetch: bool,
     sprite0_penalty: u8,
 
-    pub tot_cycles: usize,
     stat_int_update_pending: bool,
+
+    pub mode2_clocks: usize,
 }
 
 impl Gpu {
@@ -307,8 +309,9 @@ impl Gpu {
             cancel_sprite_fetch: false,
             sprite0_penalty: 0,
 
-            tot_cycles: 0,
             stat_int_update_pending: true,
+
+            mode2_clocks: 0,
         }
     }
 
@@ -343,7 +346,7 @@ impl Gpu {
         }
 
         while cycles > 0 {
-            // self.tot_cycles += 1;
+            self.mode2_clocks += 1;
             cycles -= 1;
             self.clock += 1;
 
@@ -368,7 +371,7 @@ impl Gpu {
             self.search_idx += 1;
 
             if self.clock == 80 {
-                self.tot_cycles = 80;
+                // println!("mode 2 clocks: {}", self.mode2_clocks);
                 self.change_mode(GpuMode::InitPixelTransfer);
                 return cycles;
             }
@@ -403,7 +406,6 @@ impl Gpu {
 
         if self.clock + cycles >= 5 {
             let cycles_left = self.clock + cycles - 5;
-            self.tot_cycles += cycles - cycles_left;
             self.mode3_clocks = 5;
 
             // if self.position.ly == 0 {
@@ -418,7 +420,6 @@ impl Gpu {
 
             cycles_left
         } else {
-            self.tot_cycles += cycles;
             self.clock += cycles;
 
             0
@@ -427,18 +428,13 @@ impl Gpu {
 
     fn run_pixel_transfer(&mut self, mut cycles: usize) -> usize {
         while cycles > 0 {
-            self.tot_cycles += 1;
             cycles -= 1;
             self.mode3_clocks += 1;
 
             self.pixel_transfer_tick();
 
             if self.lx == 160 {
-                // println!(
-                //     "mode 2 + 3 cycles: {}, M-cycles: {}",
-                //     self.tot_cycles,
-                //     self.tot_cycles / 4
-                // );
+                // println!("mode 3 clocks: {}", self.mode3_clocks);
                 self.change_mode(GpuMode::HBlank);
                 return cycles;
             }
@@ -736,16 +732,10 @@ impl Gpu {
             self.stat_int_update_pending = false;
         }
 
-        // let mode3_penalty = self.mode3_clocks - 172;
-        if self.mode3_clocks < 173 {
-            println!("mode 3 clocks: {}", self.mode3_clocks)
-        }
-        let mode3_penalty = self.mode3_clocks - 173;
-        let hblank_clocks = 204 - mode3_penalty;
+        let hblank_clocks = CYCLES_IN_LINE - (80 + self.mode3_clocks);
 
         if self.clock + cycles >= hblank_clocks {
             let cycles_left = self.clock + cycles - hblank_clocks;
-            self.tot_cycles += cycles - cycles_left;
             self.position.ly += 1;
             self.update_stat_int_signal();
 
@@ -753,14 +743,12 @@ impl Gpu {
                 self.change_mode(GpuMode::VBlank);
                 self.request_vblank_interrupt();
             } else {
-                println!("Cycles for line: {}", self.tot_cycles);
                 self.change_mode(GpuMode::OamSearch);
                 self.update_stat_int_signal();
             }
 
             cycles_left
         } else {
-            self.tot_cycles += cycles;
             self.clock += cycles;
             0
         }
@@ -803,21 +791,16 @@ impl Gpu {
         self.clock = 0;
         self.stat.mode = mode;
 
-        // if self.stat.mode != GpuMode::PixelTransfer {
-        //     self.update_stat_int_signal();
-        // }
-        // self.update_stat_int_signal();
         self.stat_int_update_pending = true;
 
         match self.stat.mode {
-            GpuMode::HBlank => {}
             GpuMode::OamSearch => {
                 self.sprites.clear();
                 self.comparators.clear();
                 self.locations.clear();
                 self.search_idx = 0;
 
-                self.tot_cycles = 0;
+                self.mode2_clocks = 0;
             }
             GpuMode::PixelTransfer => {
                 // clear FIFOs

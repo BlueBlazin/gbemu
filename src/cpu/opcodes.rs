@@ -59,6 +59,9 @@ impl Cpu {
 			}
 			0x7E => {
 				let value = self.get_addr(&Addr::HL);
+				if self.tmp_flag {
+					println!("STAT value: {:08b}", value);
+				}
 				self.set_r8(R8::A, value);
 			}
 			0x40 => {
@@ -542,13 +545,6 @@ impl Cpu {
 			}
 			0xE6 => {
 				let value = self.get_imm8();
-				if (self.mmu.get_byte(0xFFFF) & 0x2) != 0 && self.get_r16(&R16::HL) == 0xFF41 {
-					println!(
-						"STAT & 0x03. Cycles: {}. Mode: {:?}",
-						self.mmu.gpu.tot_cycles / 4,
-						self.mmu.gpu.mode()
-					);
-				}
 				self.and_r8_imm(R8::A, value)
 			}
 			0xB0 => {
