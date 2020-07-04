@@ -17,7 +17,7 @@ pub const OAM_OFFSET: u16 = 0xFE00;
 const SCX_TO_WX0_COMPARE: [i16; 8] = [-7, -9, -10, -11, -12, -13, -14, -14];
 const CYCLES_IN_LINE: usize = 456;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum GpuMode {
     OamSearch,
     PixelTransfer,
@@ -262,6 +262,8 @@ pub struct Gpu {
     stat_int_update_pending: bool,
 
     pub mode2_clocks: usize,
+
+    next_mode: GpuMode,
 }
 
 impl Gpu {
@@ -312,6 +314,8 @@ impl Gpu {
             stat_int_update_pending: true,
 
             mode2_clocks: 0,
+
+            next_mode: GpuMode::OamSearch,
         }
     }
 
@@ -329,6 +333,10 @@ impl Gpu {
         }
 
         while cycles > 0 {
+            if self.stat.mode != self.next_mode {
+                self.change_mode(self.next_mode.clone());
+            }
+
             match self.stat.mode {
                 GpuMode::OamSearch => cycles = self.run_oam_search(cycles),
                 GpuMode::InitPixelTransfer => cycles = self.run_init_pixel_transfer(cycles),
@@ -372,7 +380,7 @@ impl Gpu {
 
             if self.clock == 80 {
                 // println!("mode 2 clocks: {}", self.mode2_clocks);
-                self.change_mode(GpuMode::InitPixelTransfer);
+                self.next_mode = GpuMode::InitPixelTransfer;
                 return cycles;
             }
         }
@@ -416,7 +424,7 @@ impl Gpu {
                 self.wy_triggered = true;
             }
 
-            self.change_mode(GpuMode::PixelTransfer);
+            self.next_mode = GpuMode::PixelTransfer;
 
             cycles_left
         } else {
@@ -434,8 +442,7 @@ impl Gpu {
             self.pixel_transfer_tick();
 
             if self.lx == 160 {
-                // println!("mode 3 clocks: {}", self.mode3_clocks);
-                self.change_mode(GpuMode::HBlank);
+                self.next_mode = GpuMode::HBlank;
                 return cycles;
             }
         }
@@ -740,10 +747,13 @@ impl Gpu {
             self.update_stat_int_signal();
 
             if self.position.ly > 143 {
-                self.change_mode(GpuMode::VBlank);
+                self.next_mode = GpuMode::VBlank;
                 self.request_vblank_interrupt();
+                if self.stat.oam_int != 0 {
+                    self.request_lcd_interrupt();
+                }
             } else {
-                self.change_mode(GpuMode::OamSearch);
+                self.next_mode = GpuMode::OamSearch;
                 self.update_stat_int_signal();
             }
 
@@ -777,7 +787,7 @@ impl Gpu {
                 self.position.ly = 0;
                 self.win_counter = -1;
                 self.wy_triggered = false;
-                self.change_mode(GpuMode::OamSearch);
+                self.next_mode = GpuMode::OamSearch;
             }
 
             cycles_left
@@ -905,6 +915,7 @@ impl Gpu {
                 let old_display_enable = self.lcdc.display_enable;
                 self.lcdc.display_enable = value & 0x80;
                 if old_display_enable != 0 && self.lcdc.display_enable == 0 {
+                    self.next_mode = GpuMode::HBlank;
                     self.change_mode(GpuMode::HBlank);
 
                     self.position.ly = 0;

@@ -1138,26 +1138,26 @@ impl Cpu {
         match r {
             R16::AF => {
                 let ms = self.get_r8(&R8::A) as u8;
-                let ls = self.get_r8(&R8::F) as u8;
                 self.push(ms);
+                let ls = self.get_r8(&R8::F) as u8;
                 self.push(ls & 0xF0);
             }
             R16::BC => {
                 let ms = self.get_r8(&R8::B);
-                let ls = self.get_r8(&R8::C);
                 self.push(ms);
+                let ls = self.get_r8(&R8::C);
                 self.push(ls);
             }
             R16::DE => {
                 let ms = self.get_r8(&R8::D);
-                let ls = self.get_r8(&R8::E);
                 self.push(ms);
+                let ls = self.get_r8(&R8::E);
                 self.push(ls);
             }
             R16::HL => {
                 let ms = self.get_r8(&R8::H);
-                let ls = self.get_r8(&R8::L);
                 self.push(ms);
+                let ls = self.get_r8(&R8::L);
                 self.push(ls);
             }
             R16::SP => (),
@@ -1288,7 +1288,7 @@ impl Cpu {
 
         self.mmu.timer_tick(cycles);
 
-        if !self.stopped && !self.halted {
+        if !self.stopped && !self.halted && self.mmu.oam_dma.active {
             self.mmu.oam_dma_tick(cycles);
         }
 
