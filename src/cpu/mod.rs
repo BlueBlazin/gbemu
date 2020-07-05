@@ -92,8 +92,6 @@ pub struct Cpu {
     halt_bug: bool,
     ime_set_pending: bool,
     just_halted: bool,
-
-    tmp_flag: bool,
 }
 
 impl Cpu {
@@ -117,8 +115,6 @@ impl Cpu {
             halt_bug: false,
             ime_set_pending: false,
             just_halted: false,
-
-            tmp_flag: false,
         }
     }
 
@@ -184,7 +180,7 @@ impl Cpu {
     fn cpu_tick(&mut self) {
         self.just_halted = false;
 
-        let ie = self.mmu.get_byte(0xFFFF);
+        let ie = self.mmu.ie;
         let irr = self.mmu.get_byte(0xFF0F);
 
         let ints_pending = ie & irr & 0x1F;
@@ -200,7 +196,6 @@ impl Cpu {
             return;
         }
 
-        // Fetch - Decode - Execute
         let opcode = self.fetch();
 
         if self.halt_bug {
@@ -319,15 +314,6 @@ impl Cpu {
     }
 
     fn handle_interrupt(&mut self, i: u16) {
-        if i == 1 {
-            println!(
-                "STAT INT. Cycles: {}. Mode: {:?}. PC: {:#X}",
-                self.mmu.gpu.mode2_clocks,
-                self.mmu.gpu.mode(),
-                self.pc
-            );
-        }
-
         let mask = 1u8 << i;
         self.ime = false;
         let irr = self.mmu.get_byte(0xFF0F);
@@ -779,11 +765,6 @@ impl Cpu {
     }
 
     pub fn halt(&mut self) {
-        println!(
-            "HALT. Cycles: {}. Mode: {:?}",
-            self.mmu.gpu.mode3_clocks,
-            self.mmu.gpu.mode()
-        );
         self.halted = true;
 
         let ie = self.mmu.get_byte(0xFFFF);
@@ -1429,7 +1410,8 @@ mod tests {
         // let rom = fs::read("roms/dmg-acid2.gb").unwrap();
         // let rom = fs::read("roms/Tetris.gb").unwrap();
         // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
-        let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
+        // let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
+        let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
         // let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
         // let rom = fs::read("roms/Prehistorik Man (USA, Europe).gb").unwrap();
         println!("{:#X}", rom[0x147]);
@@ -1456,7 +1438,6 @@ mod tests {
         );
 
         if cpu.mmu.get_byte(cpu.pc) == 0x7E {
-            cpu.tmp_flag = true;
             println!("STAT before: {:08b}", cpu.mmu.get_byte(0xFF41));
             cpu.tick();
             println!("STAT after: {:08b}", cpu.mmu.get_byte(0xFF41));

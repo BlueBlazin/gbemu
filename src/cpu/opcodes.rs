@@ -59,9 +59,6 @@ impl Cpu {
 			}
 			0x7E => {
 				let value = self.get_addr(&Addr::HL);
-				if self.tmp_flag {
-					println!("STAT value: {:08b}", value);
-				}
 				self.set_r8(R8::A, value);
 			}
 			0x40 => {

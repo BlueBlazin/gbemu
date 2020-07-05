@@ -749,7 +749,8 @@ impl Gpu {
             if self.position.ly > 143 {
                 self.next_mode = GpuMode::VBlank;
                 self.request_vblank_interrupt();
-                if self.stat.oam_int != 0 {
+
+                if self.stat.oam_int != 0 && self.emu_mode == EmulationMode::Dmg {
                     self.request_lcd_interrupt();
                 }
             } else {
@@ -914,19 +915,44 @@ impl Gpu {
             0xFF40 => {
                 let old_display_enable = self.lcdc.display_enable;
                 self.lcdc.display_enable = value & 0x80;
+
+                // on -> off
                 if old_display_enable != 0 && self.lcdc.display_enable == 0 {
-                    self.next_mode = GpuMode::HBlank;
-                    self.change_mode(GpuMode::HBlank);
+                    // self.change_mode(GpuMode::HBlank);
+                    // self.next_mode = GpuMode::HBlank;
+                    self.stat.mode = GpuMode::HBlank;
 
                     self.position.ly = 0;
+                    // self.position.lyc = 0;
 
-                    self.win_counter = -1;
                     self.wx_triggered = false;
-
-                    self.mode3_clocks = 172;
+                    self.win_counter = -1;
 
                     self.clear_screen();
                 }
+
+                // 0ff -> on
+                if old_display_enable == 0 && self.lcdc.display_enable != 0 {
+                    self.mode2_clocks = 80;
+                    self.mode3_clocks = CYCLES_IN_LINE - 80 - 4;
+                    self.next_mode = GpuMode::HBlank;
+                    // self.next_mode = GpuMode::InitPixelTransfer;
+                    // self.change_mode(GpuMode::InitPixelTransfer);
+                }
+
+                // if old_display_enable != 0 && self.lcdc.display_enable == 0 {
+                //     self.next_mode = GpuMode::HBlank;
+                //     self.change_mode(GpuMode::HBlank);
+
+                //     self.position.ly = 0;
+
+                //     self.win_counter = -1;
+                //     self.wx_triggered = false;
+
+                //     self.mode3_clocks = 172;
+
+                //     self.clear_screen();
+                // }
                 self.lcdc.win_tilemap_sel = value & 0x40;
                 self.lcdc.win_display_enable = value & 0x20;
                 self.lcdc.tiledata_sel = value & 0x10;
