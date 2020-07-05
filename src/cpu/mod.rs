@@ -187,7 +187,7 @@ impl Cpu {
 
         let ime = self.ime;
         if self.ime_set_pending {
-            self.ime = true;
+            self.ime = !self.ime;
             self.ime_set_pending = false;
         }
 
@@ -226,7 +226,7 @@ impl Cpu {
 
         let ime = self.ime;
         if self.ime_set_pending {
-            self.ime = true;
+            self.ime = !self.ime;
             self.ime_set_pending = false;
         }
 
@@ -268,22 +268,15 @@ impl Cpu {
     fn service_pending_interrupts(&mut self) {
         self.halted = false;
 
-        // let irr = self.mmu.get_byte(0xFF0F);
-
-        // self.add_cycles(4);
-        // self.add_cycles(4);
-        // self.add_cycles(4);
-
         self.sp = self.sp.wrapping_sub(1);
 
-        // self.add_cycles(12);
-        self.add_cycles(4);
-        self.add_cycles(4);
-        self.memory_set(self.sp, (self.pc >> 8) as u8);
-        self.add_cycles(4);
+        self.add_cycles(8);
 
-        // let mut ints = self.mmu.get_byte(0xFFFF);
+        self.memory_set(self.sp, (self.pc >> 8) as u8);
+
         let mut ints = self.mmu.ie;
+
+        self.add_cycles(4);
 
         if self.sp == 0xFF0F + 1 {
             self.sp = self.sp.wrapping_sub(1);

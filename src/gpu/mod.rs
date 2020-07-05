@@ -264,6 +264,9 @@ pub struct Gpu {
     pub mode2_clocks: usize,
 
     next_mode: GpuMode,
+
+    lcd_on_first_line: bool,
+    line0_clocks: usize,
 }
 
 impl Gpu {
@@ -316,6 +319,9 @@ impl Gpu {
             mode2_clocks: 0,
 
             next_mode: GpuMode::OamSearch,
+
+            lcd_on_first_line: false,
+            line0_clocks: 0,
         }
     }
 
@@ -332,6 +338,13 @@ impl Gpu {
             return;
         }
 
+        if self.lcd_on_first_line {
+            cycles = self.handle_first_line(cycles);
+            if cycles == 0 {
+                return;
+            }
+        }
+
         while cycles > 0 {
             if self.stat.mode != self.next_mode {
                 self.change_mode(self.next_mode.clone());
@@ -344,6 +357,24 @@ impl Gpu {
                 GpuMode::HBlank => cycles = self.run_hblank(cycles),
                 GpuMode::VBlank => cycles = self.run_vblank(cycles),
             }
+        }
+    }
+
+    fn handle_first_line(&mut self, mut cycles: usize) -> usize {
+        if self.clock + cycles >= 80 {
+            let cycles_left = self.clock + cycles - 80;
+            self.mode2_clocks = 80 + 4;
+
+            self.next_mode = GpuMode::InitPixelTransfer;
+            self.change_mode(GpuMode::InitPixelTransfer);
+
+            self.lcd_on_first_line = false;
+
+            cycles_left
+        } else {
+            self.clock += cycles;
+
+            0
         }
     }
 
@@ -918,12 +949,9 @@ impl Gpu {
 
                 // on -> off
                 if old_display_enable != 0 && self.lcdc.display_enable == 0 {
-                    // self.change_mode(GpuMode::HBlank);
-                    // self.next_mode = GpuMode::HBlank;
                     self.stat.mode = GpuMode::HBlank;
 
                     self.position.ly = 0;
-                    // self.position.lyc = 0;
 
                     self.wx_triggered = false;
                     self.win_counter = -1;
@@ -933,11 +961,16 @@ impl Gpu {
 
                 // 0ff -> on
                 if old_display_enable == 0 && self.lcdc.display_enable != 0 {
-                    self.mode2_clocks = 80;
-                    self.mode3_clocks = CYCLES_IN_LINE - 80 - 4;
-                    self.next_mode = GpuMode::HBlank;
-                    // self.next_mode = GpuMode::InitPixelTransfer;
-                    // self.change_mode(GpuMode::InitPixelTransfer);
+                    self.clock = 0;
+                    self.lcd_on_first_line = true;
+
+                    // pseudo lyc = 0 comparison
+                    let lyc = self.position.lyc;
+                    self.stat.mode = GpuMode::InitPixelTransfer;
+                    self.position.lyc = 0;
+                    self.update_stat_int_signal();
+                    self.position.lyc = lyc;
+                    self.stat.mode = GpuMode::HBlank;
                 }
 
                 // if old_display_enable != 0 && self.lcdc.display_enable == 0 {
