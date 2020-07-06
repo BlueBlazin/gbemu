@@ -360,14 +360,15 @@ impl Gpu {
         }
     }
 
-    fn handle_first_line(&mut self, mut cycles: usize) -> usize {
+    fn handle_first_line(&mut self, cycles: usize) -> usize {
         if self.clock + cycles >= 80 {
             let cycles_left = self.clock + cycles - 80;
-            self.mode2_clocks = 80 + 4;
+            self.mode2_clocks = 80 + 8;
 
             self.next_mode = GpuMode::InitPixelTransfer;
             self.change_mode(GpuMode::InitPixelTransfer);
 
+            self.stat_int_update_pending = false;
             self.lcd_on_first_line = false;
 
             cycles_left
@@ -779,7 +780,6 @@ impl Gpu {
 
             if self.position.ly > 143 {
                 self.next_mode = GpuMode::VBlank;
-                self.request_vblank_interrupt();
 
                 if self.stat.oam_int != 0 && self.emu_mode == EmulationMode::Dmg {
                     self.request_lcd_interrupt();
@@ -833,11 +833,13 @@ impl Gpu {
         self.clock = 0;
         self.stat.mode = mode;
 
-        self.stat_int_update_pending = true;
+        if self.stat.mode != GpuMode::PixelTransfer {
+            self.stat_int_update_pending = true;
+        }
 
         match self.stat.mode {
             GpuMode::VBlank => {
-                // self.request_vblank_interrupt();
+                self.request_vblank_interrupt();
             }
             GpuMode::OamSearch => {
                 self.sprites.clear();

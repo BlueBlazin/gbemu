@@ -417,10 +417,15 @@ impl Cpu {
         self.jp_addr(value as u16);
     }
 
+    // pub fn ret(&mut self) {
+    //     let ls = self.pop() as u16;
+    //     let ms = self.pop() as u16;
+    //     self.jp_addr((ms << 8) | ls);
+    // }
     pub fn ret(&mut self) {
-        let ls = self.pop() as u16;
-        let ms = self.pop() as u16;
-        self.jp_addr((ms << 8) | ls);
+        self.pc = self.pop() as u16;
+        self.pc |= (self.pop() as u16) << 8;
+        self.add_cycles(4);
     }
 
     pub fn ret_cc(&mut self, flag: Flag, set: bool) {
@@ -430,6 +435,10 @@ impl Cpu {
         }
     }
 
+    // pub fn reti(&mut self) {
+    //     self.ime = true;
+    //     self.ret();
+    // }
     pub fn reti(&mut self) {
         self.ime = true;
         self.ret();
@@ -1403,8 +1412,8 @@ mod tests {
         // let rom = fs::read("roms/Tetris.gb").unwrap();
         // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
         // let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
-        // let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
-        let rom = fs::read("roms/bits_mode.gb").unwrap();
+        let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
+        // let rom = fs::read("roms/bits_mode.gb").unwrap();
         // let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
         // let rom = fs::read("roms/Prehistorik Man (USA, Europe).gb").unwrap();
         println!("{:#X}", rom[0x147]);

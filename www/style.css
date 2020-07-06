@@ -1,5 +1,6 @@
 body {
-  background-color: #5f75a5;
+  /* background-color: #5f75a5; */
+  background-color: #121720;
 }
 
 #gbemu-canvas {
@@ -10,19 +11,40 @@ body {
   height: 280px;
   /* width: 240px;
   height: 210px; */
-  /* box-shadow: inset 0 5px 15px #000000; */
   border: 2px solid #002907;
   border-right: 4px solid #002907;
   border-bottom: 4px solid #002907;
   padding: 0;
-  margin: 20px;
-  background-color: #88c070;
+  /* background-color: #9bcc86; */
+  background-color: #080e05;
+  position: relative;
 }
+
+/* #gbemu-canvas::after {
+  width: 320px;
+  height: 280px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  content: "";
+  background-image: linear-gradient(45deg, #808080 25%, transparent 25%),
+    linear-gradient(-45deg, #808080 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #808080 75%),
+    linear-gradient(-45deg, transparent 75%, #808080 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+  z-index: 10;
+} */
 
 .container {
   display: flex;
   justify-content: center;
   margin-top: 30px;
+}
+
+.canvas-shadow-container {
+  margin: 20px;
+  padding: 0;
 }
 
 .canvas-container {
