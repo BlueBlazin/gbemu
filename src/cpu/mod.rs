@@ -268,36 +268,35 @@ impl Cpu {
     fn service_pending_interrupts(&mut self) {
         self.halted = false;
 
+        self.add_cycles(12);
+
         self.sp = self.sp.wrapping_sub(1);
-
-        self.add_cycles(8);
-
-        self.memory_set(self.sp, (self.pc >> 8) as u8);
+        self.mmu.set_byte(self.sp, (self.pc >> 8) as u8);
 
         let mut ints = self.mmu.ie;
 
-        self.add_cycles(4);
-
         if self.sp == 0xFF0F + 1 {
-            self.sp = self.sp.wrapping_sub(1);
+            self.sp = 0xFF0F;
+            self.add_cycles(4);
+            let old_irr = self.mmu.get_byte(0xFF0F);
+            self.mmu.set_byte(0xFF0F, (self.pc & 0xFF) as u8);
 
-            let irr = self.mmu.get_byte(0xFF0F);
-            self.memory_set(self.sp, (self.pc & 0xFF) as u8);
-
-            ints &= irr & 0x1F;
+            ints &= old_irr & 0x1F;
         } else {
             self.sp = self.sp.wrapping_sub(1);
-            self.memory_set(self.sp, (self.pc & 0xFF) as u8);
+            self.add_cycles(4);
+            self.mmu.set_byte(self.sp, (self.pc & 0xFF) as u8);
+
             ints &= self.mmu.get_byte(0xFF0F) & 0x1F;
         }
+
+        self.add_cycles(4);
 
         if ints == 0 {
             self.pc = 0;
             self.ime = false;
             return;
         }
-
-        // let irr = self.mmu.get_byte(0xFF0F);
 
         for i in 0..5 {
             if ints & (1u8 << i) != 0 {
@@ -1404,7 +1403,8 @@ mod tests {
         // let rom = fs::read("roms/Tetris.gb").unwrap();
         // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
         // let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
-        let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
+        // let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
+        let rom = fs::read("roms/bits_mode.gb").unwrap();
         // let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
         // let rom = fs::read("roms/Prehistorik Man (USA, Europe).gb").unwrap();
         println!("{:#X}", rom[0x147]);

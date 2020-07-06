@@ -5,9 +5,18 @@ body {
 #gbemu-canvas {
   /* border: 1px solid black; */
   /* image-rendering: pixelated; */
-  padding: 1px;
+  /* padding: 1px; */
   width: 320px;
   height: 280px;
+  /* width: 240px;
+  height: 210px; */
+  /* box-shadow: inset 0 5px 15px #000000; */
+  border: 2px solid #002907;
+  border-right: 4px solid #002907;
+  border-bottom: 4px solid #002907;
+  padding: 0;
+  margin: 20px;
+  background-color: #88c070;
 }
 
 .container {

@@ -836,6 +836,9 @@ impl Gpu {
         self.stat_int_update_pending = true;
 
         match self.stat.mode {
+            GpuMode::VBlank => {
+                // self.request_vblank_interrupt();
+            }
             GpuMode::OamSearch => {
                 self.sprites.clear();
                 self.comparators.clear();
