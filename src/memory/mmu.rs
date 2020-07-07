@@ -12,6 +12,14 @@ const HRAM_OFFSET: u16 = 0xFF80;
 const WRAM_OFFSET: u16 = 0xC000;
 const ECHO_OFFSET: u16 = 0xE000;
 
+#[derive(PartialEq)]
+pub enum AddrBus {
+    Main,
+    Vram,
+    Ram,
+    Internal,
+}
+
 pub struct OamDma {
     pub active: bool,
     pub src_addr: u16,
@@ -19,6 +27,7 @@ pub struct OamDma {
     pub just_launched: bool,
     pub pending: bool,
     pub restarting: bool,
+    pub dst_addr: u16,
 }
 
 impl Default for OamDma {
@@ -30,6 +39,7 @@ impl Default for OamDma {
             just_launched: false,
             pending: false,
             restarting: false,
+            dst_addr: 0,
         }
     }
 }
@@ -146,7 +156,39 @@ impl Mmu {
         32
     }
 
-    pub fn oam_dma_tick(&mut self, mut cycles: usize) {
+    // pub fn oam_dma_tick(&mut self, mut cycles: usize) {
+    //     self.oam_dma_cycles += cycles;
+
+    //     if self.oam_dma.pending {
+    //         self.gpu.oam_dma_active = true;
+    //         self.oam_dma.pending = false;
+    //     }
+
+    //     if self.oam_dma.restarting {
+    //         self.oam_dma.restarting = false;
+    //     }
+
+    //     if self.oam_dma_cycles >= 4 && self.oam_dma.just_launched {
+    //         self.oam_dma.just_launched = false;
+    //         self.oam_dma_cycles -= 4;
+    //     }
+
+    //     while self.oam_dma_cycles >= 4 {
+    //         self.oam_dma_cycles -= 4;
+
+    //         let offset = self.oam_dma.i;
+    //         let value = self.get_byte(self.oam_dma.src_addr + offset);
+    //         self.gpu.oam[(0xFE00 + offset - OAM_OFFSET) as usize] = value;
+
+    //         self.oam_dma.i += 1;
+    //         if self.oam_dma.i == 160 {
+    //             self.deactivate_oam_dma();
+    //             break;
+    //         }
+    //     }
+    // }
+
+    pub fn oam_dma_tick(&mut self, cycles: usize) {
         self.oam_dma_cycles += cycles;
 
         if self.oam_dma.pending {
@@ -166,11 +208,17 @@ impl Mmu {
         while self.oam_dma_cycles >= 4 {
             self.oam_dma_cycles -= 4;
 
-            let offset = self.oam_dma.i;
-            let value = self.get_byte(self.oam_dma.src_addr + offset);
-            self.gpu.oam[(0xFE00 + offset - OAM_OFFSET) as usize] = value;
+            if self.oam_dma.src_addr < 0xE000 {
+                self.gpu.oam[self.oam_dma.i as usize] = self.get_byte(self.oam_dma.src_addr);
+            } else {
+                self.gpu.oam[self.oam_dma.i as usize] =
+                    self.get_byte(self.oam_dma.src_addr & !0x2000);
+            }
 
+            self.oam_dma.src_addr += 1;
+            self.oam_dma.dst_addr += 1;
             self.oam_dma.i += 1;
+
             if self.oam_dma.i == 160 {
                 self.deactivate_oam_dma();
                 break;
@@ -209,7 +257,43 @@ impl Mmu {
         self.gpu.screen()
     }
 
-    pub fn get_byte(&mut self, addr: u16) -> u8 {
+    fn addr_bus(&self, addr: u16) -> AddrBus {
+        if addr < 0x8000 {
+            return AddrBus::Main;
+        }
+
+        if addr < 0xA000 {
+            return AddrBus::Vram;
+        }
+
+        if addr < 0xC000 {
+            return AddrBus::Main;
+        }
+
+        if addr < 0xFE00 {
+            return if self.emu_mode == EmulationMode::Cgb {
+                AddrBus::Ram
+            } else {
+                AddrBus::Main
+            };
+        }
+
+        AddrBus::Internal
+    }
+
+    fn shared_dma_addr(&self, addr: u16) -> bool {
+        if !self.oam_dma.active || !self.gpu.oam_dma_active {
+            return false;
+        }
+
+        self.addr_bus(addr) == self.addr_bus(self.oam_dma.src_addr)
+    }
+
+    pub fn get_byte(&mut self, mut addr: u16) -> u8 {
+        // if self.shared_dma_addr(addr) {
+        //     addr = self.oam_dma.src_addr;
+        // }
+
         match addr {
             // 0000-0100   256 byte Boot ROM
             0x0000..=0x00FF => {
@@ -374,12 +458,9 @@ impl Mmu {
         self.oam_dma_cycles = 0;
         self.oam_dma.active = true;
         self.oam_dma.just_launched = true;
-        self.oam_dma.i = 0;
         self.oam_dma.src_addr = (value as u16) << 8;
         self.oam_dma.pending = true;
-        // if self.emu_mode == EmulationMode::Dmg {
-        //     self.gpu.oam_dma_active = true;
-        // }
+        self.oam_dma.dst_addr = 0;
     }
 
     #[inline]

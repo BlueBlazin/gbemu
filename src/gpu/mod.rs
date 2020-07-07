@@ -1028,7 +1028,11 @@ impl Gpu {
                 }
             }
             0xFF4B => self.position.wx = value,
-            0xFF4F => self.vram_bank = (value & 0x01) as usize,
+            0xFF4F => {
+                if self.emu_mode == EmulationMode::Cgb {
+                    self.vram_bank = (value & 0x01) as usize;
+                }
+            }
             0xFF68 => {
                 self.cgbp.bgp_idx = value & 0x3F;
                 self.cgbp.bgp_auto_incr = (value & 0x80) != 0;

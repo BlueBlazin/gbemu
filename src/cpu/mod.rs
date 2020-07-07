@@ -1270,7 +1270,7 @@ impl Cpu {
 
         self.mmu.timer_tick(cycles);
 
-        if !self.stopped && !self.halted && self.mmu.oam_dma.active {
+        if !self.stopped && self.mmu.oam_dma.active {
             self.mmu.oam_dma_tick(cycles);
         }
 
@@ -1412,7 +1412,8 @@ mod tests {
         // let rom = fs::read("roms/Tetris.gb").unwrap();
         // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
         // let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
-        let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
+        // let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
+        let rom = fs::read("roms/sources-GS.gb").unwrap();
         // let rom = fs::read("roms/bits_mode.gb").unwrap();
         // let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
         // let rom = fs::read("roms/Prehistorik Man (USA, Europe).gb").unwrap();
