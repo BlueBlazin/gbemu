@@ -25,9 +25,6 @@ pub struct OamDma {
     pub src_addr: u16,
     pub i: u16,
     pub just_launched: bool,
-    pub pending: bool,
-    pub restarting: bool,
-    pub dst_addr: u16,
 }
 
 impl Default for OamDma {
@@ -37,9 +34,6 @@ impl Default for OamDma {
             src_addr: 0,
             i: 0,
             just_launched: false,
-            pending: false,
-            restarting: false,
-            dst_addr: 0,
         }
     }
 }
@@ -156,56 +150,21 @@ impl Mmu {
         32
     }
 
-    // pub fn oam_dma_tick(&mut self, mut cycles: usize) {
-    //     self.oam_dma_cycles += cycles;
-
-    //     if self.oam_dma.pending {
-    //         self.gpu.oam_dma_active = true;
-    //         self.oam_dma.pending = false;
-    //     }
-
-    //     if self.oam_dma.restarting {
-    //         self.oam_dma.restarting = false;
-    //     }
-
-    //     if self.oam_dma_cycles >= 4 && self.oam_dma.just_launched {
-    //         self.oam_dma.just_launched = false;
-    //         self.oam_dma_cycles -= 4;
-    //     }
-
-    //     while self.oam_dma_cycles >= 4 {
-    //         self.oam_dma_cycles -= 4;
-
-    //         let offset = self.oam_dma.i;
-    //         let value = self.get_byte(self.oam_dma.src_addr + offset);
-    //         self.gpu.oam[(0xFE00 + offset - OAM_OFFSET) as usize] = value;
-
-    //         self.oam_dma.i += 1;
-    //         if self.oam_dma.i == 160 {
-    //             self.deactivate_oam_dma();
-    //             break;
-    //         }
-    //     }
-    // }
-
     pub fn oam_dma_tick(&mut self, cycles: usize) {
+        if self.oam_dma.i == 160 {
+            self.deactivate_oam_dma();
+            return;
+        }
+
         self.oam_dma_cycles += cycles;
 
-        if self.oam_dma.pending {
-            self.gpu.oam_dma_active = true;
-            self.oam_dma.pending = false;
-        }
-
-        if self.oam_dma.restarting {
-            self.oam_dma.restarting = false;
-        }
-
-        if self.oam_dma_cycles >= 4 && self.oam_dma.just_launched {
-            self.oam_dma.just_launched = false;
+        if self.oam_dma.just_launched && self.oam_dma_cycles >= 4 {
             self.oam_dma_cycles -= 4;
+            self.gpu.oam_dma_active = true;
+            self.oam_dma.just_launched = false;
         }
 
-        while self.oam_dma_cycles >= 4 {
+        while self.oam_dma_cycles >= 4 && self.oam_dma.i < 160 {
             self.oam_dma_cycles -= 4;
 
             if self.oam_dma.src_addr < 0xE000 {
@@ -215,14 +174,8 @@ impl Mmu {
                     self.get_byte(self.oam_dma.src_addr & !0x2000);
             }
 
-            self.oam_dma.src_addr += 1;
-            self.oam_dma.dst_addr += 1;
             self.oam_dma.i += 1;
-
-            if self.oam_dma.i == 160 {
-                self.deactivate_oam_dma();
-                break;
-            }
+            self.oam_dma.src_addr += 1;
         }
     }
 
@@ -315,7 +268,8 @@ impl Mmu {
             // E000-FDFF   Same as C000-DDFF (ECHO)
             0xE000..=0xFDFF => self.wram.get_byte(WRAM_OFFSET + (addr - ECHO_OFFSET)),
             // FE00-FE9F   Sprite Attribute Table (OAM)
-            0xFE00..=0xFE9F if self.gpu.oam_dma_active | self.oam_dma.restarting => 0xFF,
+            // TODO: 0xFE00..=0xFE9F if self.gpu.oam_dma_active | self.oam_dma.restarting => 0xFF,
+            0xFE00..=0xFE9F if self.gpu.oam_dma_active => 0xFF,
             0xFE00..=0xFE9F => self.gpu.get_byte(addr),
             // FEA0-FEFF   Not Usable
             0xFEA0..=0xFEFF => 0x00,
@@ -383,7 +337,8 @@ impl Mmu {
                 .wram
                 .set_byte(WRAM_OFFSET + (addr - ECHO_OFFSET), value),
             // FE00-FE9F   Sprite Attribute Table (OAM)
-            0xFE00..=0xFE9F if self.gpu.oam_dma_active || self.oam_dma.restarting => (),
+            // TODO: 0xFE00..=0xFE9F if self.gpu.oam_dma_active || self.oam_dma.restarting => (),
+            0xFE00..=0xFE9F if self.gpu.oam_dma_active => (),
             0xFE00..=0xFE9F => self.gpu.set_byte(addr, value),
             // FEA0-FEFF   Not Usable
             0xFEA0..=0xFEFF => (),
@@ -452,21 +407,14 @@ impl Mmu {
 
     #[inline]
     fn activate_oam_dma(&mut self, value: u8) {
-        if self.oam_dma.active {
-            self.oam_dma.restarting = true;
-        }
         self.oam_dma_cycles = 0;
         self.oam_dma.active = true;
         self.oam_dma.just_launched = true;
         self.oam_dma.src_addr = (value as u16) << 8;
-        self.oam_dma.pending = true;
-        self.oam_dma.dst_addr = 0;
     }
 
     #[inline]
     fn deactivate_oam_dma(&mut self) {
-        self.oam_dma.pending = false;
-        self.oam_dma.restarting = false;
         self.oam_dma.active = false;
         self.gpu.oam_dma_active = false;
         self.oam_dma.i = 0;

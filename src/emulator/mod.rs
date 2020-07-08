@@ -24,6 +24,7 @@ impl Emulator {
         let ctx = AudioContext::new().unwrap();
 
         cpu.simulate_bootrom();
+        // cpu.emulate_bootrom();
 
         Emulator {
             cpu,

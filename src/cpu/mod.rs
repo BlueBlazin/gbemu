@@ -409,12 +409,18 @@ impl Cpu {
     //  Restarts & Returns
     // -------------------------------------------------------------
 
+    // pub fn rst(&mut self, value: u8) {
+    //     let ms = ((self.pc & 0xFF00) >> 8) as u8;
+    //     let ls = (self.pc & 0x00FF) as u8;
+    //     self.push(ms);
+    //     self.push(ls);
+    //     self.jp_addr(value as u16);
+    // }
     pub fn rst(&mut self, value: u8) {
-        let ms = ((self.pc & 0xFF00) >> 8) as u8;
-        let ls = (self.pc & 0x00FF) as u8;
-        self.push(ms);
-        self.push(ls);
-        self.jp_addr(value as u16);
+        self.add_cycles(4);
+        self.push((self.pc >> 8) as u8);
+        self.push((self.pc & 0xFF) as u8);
+        self.pc = value as u16;
     }
 
     // pub fn ret(&mut self) {
@@ -456,14 +462,26 @@ impl Cpu {
         self.jp_addr(addr);
     }
 
+    // pub fn call(&mut self) {
+    //     let addr = self.get_imm16();
+    //     self.call_addr(addr);
+    // }
     pub fn call(&mut self) {
         let addr = self.get_imm16();
+        self.add_cycles(4);
         self.call_addr(addr);
     }
 
+    // pub fn call_cc_nn(&mut self, flag: Flag, set: bool) {
+    //     let addr = self.get_imm16();
+    //     if self.get_flag(flag) == set as u8 {
+    //         self.call_addr(addr);
+    //     }
+    // }
     pub fn call_cc_nn(&mut self, flag: Flag, set: bool) {
         let addr = self.get_imm16();
         if self.get_flag(flag) == set as u8 {
+            self.add_cycles(4);
             self.call_addr(addr);
         }
     }
@@ -1413,7 +1431,8 @@ mod tests {
         // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
         // let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
         // let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
-        let rom = fs::read("roms/sources-GS.gb").unwrap();
+        // let rom = fs::read("roms/sources-GS.gb").unwrap();
+        let rom = fs::read("roms/rst_timing.gb").unwrap();
         // let rom = fs::read("roms/bits_mode.gb").unwrap();
         // let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
         // let rom = fs::read("roms/Prehistorik Man (USA, Europe).gb").unwrap();
