@@ -70,9 +70,9 @@ impl WaveChannel {
 
     pub fn get_byte(&mut self, addr: u16) -> u8 {
         match addr {
-            0xFF1A => self.registers.nrx0,
+            0xFF1A => 0x7F | self.registers.nrx0,
             0xFF1B => self.registers.nrx1,
-            0xFF1C => self.registers.nrx2,
+            0xFF1C => 0x9F | self.registers.nrx2,
             0xFF1D => self.registers.nrx3,
             0xFF1E => self.registers.nrx4,
             _ => 0x00,

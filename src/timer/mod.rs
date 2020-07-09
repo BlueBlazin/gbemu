@@ -119,7 +119,7 @@ impl Timer {
                 }
             }
             0xFF06 => self.tma,
-            0xFF07 => self.timer_enable | self.freq,
+            0xFF07 => 0xF8 | self.timer_enable | self.freq,
             _ => 0x00,
         }
     }

@@ -98,10 +98,10 @@ impl Noise {
     pub fn get_byte(&mut self, addr: u16) -> u8 {
         match addr {
             0xFF1F => self.registers.nrx0,
-            0xFF20 => self.registers.nrx1,
+            0xFF20 => 0xC0 | self.registers.nrx1,
             0xFF21 => self.registers.nrx2,
             0xFF22 => self.registers.nrx3,
-            0xFF23 => self.registers.nrx4,
+            0xFF23 => 0x3F | self.registers.nrx4,
             _ => 0x00,
         }
     }

@@ -160,13 +160,14 @@ impl Apu {
     pub fn get_byte(&mut self, addr: u16) -> u8 {
         match addr {
             0xFF10..=0xFF14 => self.channel1.get_byte(addr),
-            0xFF15..=0xFF19 => self.channel2.get_byte(addr),
+            0xFF15 => 0xFF,
+            0xFF16..=0xFF19 => self.channel2.get_byte(addr),
             0xFF1A..=0xFF1E => self.channel3.get_byte(addr),
             0xFF1F..=0xFF23 => self.channel4.get_byte(addr),
             0xFF24 => self.nr50,
             0xFF25 => self.nr51,
             0xFF26 => {
-                (self.master_on as u8) << 7
+                0x70 | (self.master_on as u8) << 7
                     | (self.channel4.enabled as u8) << 3
                     | (self.channel3.enabled as u8) << 2
                     | (self.channel2.enabled as u8) << 1

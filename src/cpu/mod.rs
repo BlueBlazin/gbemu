@@ -814,7 +814,7 @@ impl Cpu {
     pub fn halt(&mut self) {
         self.halted = true;
 
-        let ie = self.mmu.get_byte(0xFFFF);
+        let ie = self.mmu.ie;
         let irr = self.mmu.get_byte(0xFF0F);
 
         if ie & irr & 0x1F != 0 {
@@ -1458,7 +1458,8 @@ mod tests {
         // let rom = fs::read("roms/Tetris.gb").unwrap();
         // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
         // let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
-        let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
+        // let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
+        let rom = fs::read("roms/unused_hwio-GS.gb").unwrap();
         // let rom = fs::read("roms/sources-GS.gb").unwrap();
         // let rom = fs::read("roms/rst_timing.gb").unwrap();
         // let rom = fs::read("roms/bits_mode.gb").unwrap();

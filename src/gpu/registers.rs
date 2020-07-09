@@ -97,7 +97,7 @@ impl Default for LcdStatus {
 
 impl From<&LcdStatus> for u8 {
     fn from(stat: &LcdStatus) -> u8 {
-        0x0 | stat.lyc_int
+        0x80 | stat.lyc_int
             | stat.oam_int
             | stat.vblank_int
             | stat.hblank_int

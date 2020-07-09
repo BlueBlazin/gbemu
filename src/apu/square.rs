@@ -210,7 +210,7 @@ impl SquareWave {
 
     pub fn get_byte(&self, addr: u16) -> u8 {
         match addr {
-            0xFF10 | 0xFF15 => self.registers.nrx0,
+            0xFF10 | 0xFF15 => 0x80 | self.registers.nrx0,
             0xFF11 | 0xFF16 => self.registers.nrx1,
             0xFF12 | 0xFF17 => self.registers.nrx2,
             0xFF13 | 0xFF18 => self.registers.nrx3,

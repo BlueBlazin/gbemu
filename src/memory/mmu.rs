@@ -248,7 +248,7 @@ impl Mmu {
         self.addr_bus(addr) == self.addr_bus(self.oam_dma.src_addr)
     }
 
-    pub fn get_byte(&mut self, mut addr: u16) -> u8 {
+    pub fn get_byte(&mut self, addr: u16) -> u8 {
         // if self.shared_dma_addr(addr) {
         //     addr = self.oam_dma.src_addr;
         // }
@@ -277,7 +277,7 @@ impl Mmu {
             0xFE00..=0xFE9F if self.gpu.oam_dma_active | self.oam_dma.restarting => 0xFF,
             0xFE00..=0xFE9F => self.gpu.get_byte(addr),
             // FEA0-FEFF   Not Usable
-            0xFEA0..=0xFEFF => 0x00,
+            0xFEA0..=0xFEFF => 0xFF,
             // FF00-FF7F   I/O Ports
             0xFF00..=0xFF3F => match addr {
                 0xFF00 => self.joypad.get_byte(addr),
@@ -295,7 +295,7 @@ impl Mmu {
                 0xFF30..=0xFF3F => self.apu.get_byte(addr),
                 _ => {
                     println!("Reading from io ports {:#X}", addr);
-                    0x00
+                    0xFF
                 }
             },
             0xFF40..=0xFF45 => self.gpu.get_byte(addr),
@@ -306,15 +306,27 @@ impl Mmu {
                     EmulationMode::Dmg => 0xFF,
                     EmulationMode::Cgb => u8::from(&self.cgb_mode),
                 },
-                0xFF4F => self.gpu.get_byte(addr),
-                0xFF51..=0xFF54 => 0xFF,
-                0xFF55 => match self.hdma.hdma_type {
-                    HdmaType::GPDma => self.hdma.blocks,
-                    HdmaType::HBlankDma => self.hdma.blocks,
-                    HdmaType::NoHdma => 0x80,
+                0xFF4F => match self.emu_mode {
+                    EmulationMode::Dmg => 0xFF,
+                    EmulationMode::Cgb => self.gpu.get_byte(addr),
                 },
-                0xFF68..=0xFF6B => self.gpu.get_byte(addr),
-                0xFF70 => self.wram.get_byte(addr),
+                0xFF51..=0xFF54 => 0xFF,
+                0xFF55 => match self.emu_mode {
+                    EmulationMode::Dmg => 0xFF,
+                    EmulationMode::Cgb => match self.hdma.hdma_type {
+                        HdmaType::GPDma => self.hdma.blocks,
+                        HdmaType::HBlankDma => self.hdma.blocks,
+                        HdmaType::NoHdma => 0x80,
+                    },
+                },
+                0xFF68..=0xFF6B => match self.emu_mode {
+                    EmulationMode::Dmg => 0xFF,
+                    EmulationMode::Cgb => self.gpu.get_byte(addr),
+                },
+                0xFF70 => match self.emu_mode {
+                    EmulationMode::Dmg => 0xFF,
+                    EmulationMode::Cgb => self.wram.get_byte(addr),
+                },
                 _ => {
                     println!("Read from io ports {:#X}", addr);
                     0xFF
@@ -328,6 +340,8 @@ impl Mmu {
     }
 
     pub fn set_byte(&mut self, addr: u16, value: u8) {
+        println!("addr: {:#X}, value: {:010b}", addr, value);
+
         match addr {
             // 0000-3FFF   16KB ROM Bank 0
             0x0000..=0x7FFF => self.cartridge.set_byte(addr, value),
@@ -371,13 +385,17 @@ impl Mmu {
             0xFF46 => self.activate_oam_dma(value),
             0xFF47..=0xFF4B => self.gpu.set_byte(addr, value),
             0xFF4C..=0xFF4E => match addr {
-                0xFF4D => {
+                0xFF4D if self.emu_mode == EmulationMode::Cgb => {
                     println!("Speed switch requested");
                     self.cgb_mode.prepare_speed_switch = value & 0x1;
                 }
                 _ => println!("Write to io ports {:#X}", addr),
             },
-            0xFF4F => self.gpu.set_byte(addr, value),
+            0xFF4F => {
+                if self.emu_mode == EmulationMode::Cgb {
+                    self.gpu.set_byte(addr, value);
+                }
+            }
             0xFF50 => {
                 if self.bootrom.is_active && value == 1 {
                     self.bootrom.deactivate();
@@ -386,11 +404,19 @@ impl Mmu {
                 }
             }
             0xFF51..=0xFF7F => match addr {
-                0xFF51 => self.hdma.src = (self.hdma.src & 0xF0) | ((value as u16) << 8),
-                0xFF52 => self.hdma.src = (self.hdma.src & 0xFF00) | (value as u16 & 0xF0),
-                0xFF53 => self.hdma.dst = (self.hdma.dst & 0xF0) | ((value as u16) << 8),
-                0xFF54 => self.hdma.dst = (self.hdma.dst & 0x1F00) | (value as u16 & 0xF0),
-                0xFF55 => {
+                0xFF51 if self.emu_mode == EmulationMode::Cgb => {
+                    self.hdma.src = (self.hdma.src & 0xF0) | ((value as u16) << 8)
+                }
+                0xFF52 if self.emu_mode == EmulationMode::Cgb => {
+                    self.hdma.src = (self.hdma.src & 0xFF00) | (value as u16 & 0xF0)
+                }
+                0xFF53 if self.emu_mode == EmulationMode::Cgb => {
+                    self.hdma.dst = (self.hdma.dst & 0xF0) | ((value as u16) << 8)
+                }
+                0xFF54 if self.emu_mode == EmulationMode::Cgb => {
+                    self.hdma.dst = (self.hdma.dst & 0x1F00) | (value as u16 & 0xF0)
+                }
+                0xFF55 if self.emu_mode == EmulationMode::Cgb => {
                     self.hdma.hdma_type = match value & 0x80 {
                         0x00 => HdmaType::GPDma,
                         _ => {
@@ -400,8 +426,10 @@ impl Mmu {
                     };
                     self.hdma.blocks = value & 0x7F;
                 }
-                0xFF68..=0xFF6B => self.gpu.set_byte(addr, value),
-                0xFF70 => self.wram.set_byte(addr, value),
+                0xFF68..=0xFF6B if self.emu_mode == EmulationMode::Cgb => {
+                    self.gpu.set_byte(addr, value)
+                }
+                0xFF70 if self.emu_mode == EmulationMode::Cgb => self.wram.set_byte(addr, value),
                 _ => (),
             },
             // FF80-FFFE   High RAM (HRAM)

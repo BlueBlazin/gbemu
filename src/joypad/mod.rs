@@ -98,7 +98,7 @@ impl Joypad {
         } else if (self.joyp & 0x20) == 0 {
             self.btn_keys
         } else {
-            0xFF
+            0xCF
         }
     }
 }
