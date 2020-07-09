@@ -353,9 +353,9 @@ impl Gpu {
         }
 
         while cycles > 0 {
-            if self.stat.mode != self.next_mode {
-                self.change_mode(self.next_mode.clone());
-            }
+            // if self.stat.mode != self.next_mode {
+            //     self.change_mode(self.next_mode.clone());
+            // }
 
             match self.stat.mode {
                 GpuMode::OamSearch => cycles = self.run_oam_search(cycles),
@@ -387,10 +387,10 @@ impl Gpu {
     }
 
     fn run_oam_search(&mut self, mut cycles: usize) -> usize {
-        if self.stat_int_update_pending {
-            self.update_stat_int_signal();
-            self.stat_int_update_pending = false;
-        }
+        // if self.stat_int_update_pending {
+        //     self.update_stat_int_signal();
+        //     self.stat_int_update_pending = false;
+        // }
 
         while cycles > 0 {
             self.mode2_clocks += 1;
@@ -420,6 +420,8 @@ impl Gpu {
             if self.clock == 80 {
                 // println!("mode 2 clocks: {}", self.mode2_clocks);
                 self.next_mode = GpuMode::InitPixelTransfer;
+                self.change_mode(GpuMode::InitPixelTransfer);
+                self.update_stat_int_signal();
                 return cycles;
             }
         }
@@ -446,10 +448,10 @@ impl Gpu {
     }
 
     fn run_init_pixel_transfer(&mut self, cycles: usize) -> usize {
-        if self.stat_int_update_pending {
-            self.update_stat_int_signal();
-            self.stat_int_update_pending = false;
-        }
+        // if self.stat_int_update_pending {
+        //     self.update_stat_int_signal();
+        //     self.stat_int_update_pending = false;
+        // }
 
         if self.clock + cycles >= 5 {
             let cycles_left = self.clock + cycles - 5;
@@ -464,6 +466,8 @@ impl Gpu {
             }
 
             self.next_mode = GpuMode::PixelTransfer;
+            self.change_mode(GpuMode::PixelTransfer);
+            // self.update_stat_int_signal();
 
             cycles_left
         } else {
@@ -482,6 +486,8 @@ impl Gpu {
 
             if self.lx == 160 {
                 self.next_mode = GpuMode::HBlank;
+                self.change_mode(GpuMode::HBlank);
+                self.update_stat_int_signal();
                 return cycles;
             }
         }
@@ -773,10 +779,10 @@ impl Gpu {
     }
 
     fn run_hblank(&mut self, cycles: usize) -> usize {
-        if self.stat_int_update_pending {
-            self.update_stat_int_signal();
-            self.stat_int_update_pending = false;
-        }
+        // if self.stat_int_update_pending {
+        //     self.update_stat_int_signal();
+        //     self.stat_int_update_pending = false;
+        // }
 
         let hblank_clocks = CYCLES_IN_LINE - (self.mode2_clocks + self.mode3_clocks);
 
@@ -793,8 +799,12 @@ impl Gpu {
                 }
 
                 self.next_mode = GpuMode::VBlank;
+                self.request_vblank_interrupt();
+                self.change_mode(GpuMode::VBlank);
+                self.update_stat_int_signal();
             } else {
                 self.next_mode = GpuMode::OamSearch;
+                self.change_mode(GpuMode::OamSearch);
                 self.update_stat_int_signal();
             }
 
@@ -807,11 +817,10 @@ impl Gpu {
 
     // Mode 1 - V-Blank
     fn run_vblank(&mut self, cycles: usize) -> usize {
-        if self.stat_int_update_pending {
-            self.update_stat_int_signal();
-            self.request_vblank_interrupt();
-            self.stat_int_update_pending = false;
-        }
+        // if self.stat_int_update_pending {
+        //     self.update_stat_int_signal();
+        //     self.stat_int_update_pending = false;
+        // }
 
         if self.clock + cycles >= 456 {
             let cycles_left = self.clock + cycles - 456;
@@ -830,6 +839,8 @@ impl Gpu {
                 self.win_counter = -1;
                 self.wy_triggered = false;
                 self.next_mode = GpuMode::OamSearch;
+                self.change_mode(GpuMode::OamSearch);
+                self.update_stat_int_signal();
             }
 
             cycles_left

@@ -418,9 +418,7 @@ impl Cpu {
     // }
     pub fn rst(&mut self, value: u8) {
         self.add_cycles(4);
-        self.push((self.pc >> 8) as u8);
-        self.push((self.pc & 0xFF) as u8);
-        self.pc = value as u16;
+        self.call_addr(value as u16);
     }
 
     // pub fn ret(&mut self) {
@@ -454,12 +452,22 @@ impl Cpu {
     //  Calls
     // -------------------------------------------------------------
 
+    // pub fn call_addr(&mut self, addr: u16) {
+    //     let ms = ((self.pc & 0xFF00) >> 8) as u8;
+    //     let ls = (self.pc & 0x00FF) as u8;
+    //     self.push(ms);
+    //     self.push(ls);
+    //     self.jp_addr(addr);
+    // }
     pub fn call_addr(&mut self, addr: u16) {
-        let ms = ((self.pc & 0xFF00) >> 8) as u8;
-        let ls = (self.pc & 0x00FF) as u8;
-        self.push(ms);
-        self.push(ls);
-        self.jp_addr(addr);
+        // let ms = ((self.pc & 0xFF00) >> 8) as u8;
+        // let ls = (self.pc & 0x00FF) as u8;
+        // self.push(ms);
+        // self.push(ls);
+        // self.jp_addr(addr);
+        self.push((self.pc >> 8) as u8);
+        self.push((self.pc & 0xFF) as u8);
+        self.pc = addr as u16;
     }
 
     // pub fn call(&mut self) {
@@ -490,35 +498,59 @@ impl Cpu {
     //  Jumps
     // -------------------------------------------------------------
 
-    #[inline]
-    pub fn jp_addr(&mut self, addr: u16) {
-        self.add_cycles(4);
-        self.pc = addr;
-    }
+    // #[inline]
+    // pub fn jp_addr(&mut self, addr: u16) {
+    //     self.add_cycles(4);
+    //     self.pc = addr;
+    // }
 
+    // pub fn jp_nn(&mut self) {
+    //     let addr = self.get_imm16();
+    //     self.jp_addr(addr);
+    // }
     pub fn jp_nn(&mut self) {
-        let addr = self.get_imm16();
-        self.jp_addr(addr);
+        self.pc = self.get_imm8() as u16;
+        self.pc |= (self.get_imm8() as u16) << 8;
+        self.add_cycles(4);
     }
 
+    // pub fn jp_cc_nn(&mut self, flag: Flag, set: bool) {
+    //     let addr = self.get_imm16();
+    //     if self.get_flag(flag) == set as u8 {
+    //         self.jp_addr(addr);
+    //     }
+    // }
     pub fn jp_cc_nn(&mut self, flag: Flag, set: bool) {
         let addr = self.get_imm16();
         if self.get_flag(flag) == set as u8 {
-            self.jp_addr(addr);
+            self.add_cycles(4);
+            self.pc = addr;
         }
     }
 
+    // pub fn jr_n(&mut self) {
+    //     let n = self.get_imm8();
+    //     let addr = self.pc.wrapping_add(n as i8 as i16 as u16);
+    //     self.jp_addr(addr);
+    // }
     pub fn jr_n(&mut self) {
         let n = self.get_imm8();
-        let addr = self.pc.wrapping_add(n as i8 as i16 as u16);
-        self.jp_addr(addr);
+        self.add_cycles(4);
+        self.pc = self.pc.wrapping_add(n as i8 as i16 as u16);
     }
 
+    // pub fn jr_cc_n(&mut self, flag: Flag, set: bool) {
+    //     let n = self.get_imm8();
+    //     if self.get_flag(flag) == set as u8 {
+    //         let addr = self.pc.wrapping_add(n as i8 as i16 as u16);
+    //         self.jp_addr(addr);
+    //     }
+    // }
     pub fn jr_cc_n(&mut self, flag: Flag, set: bool) {
         let n = self.get_imm8();
         if self.get_flag(flag) == set as u8 {
-            let addr = self.pc.wrapping_add(n as i8 as i16 as u16);
-            self.jp_addr(addr);
+            self.add_cycles(4);
+            self.pc = self.pc.wrapping_add(n as i8 as i16 as u16);
         }
     }
 
@@ -1430,9 +1462,9 @@ mod tests {
         // let rom = fs::read("roms/Tetris.gb").unwrap();
         // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
         // let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
-        // let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
+        let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
         // let rom = fs::read("roms/sources-GS.gb").unwrap();
-        let rom = fs::read("roms/rst_timing.gb").unwrap();
+        // let rom = fs::read("roms/rst_timing.gb").unwrap();
         // let rom = fs::read("roms/bits_mode.gb").unwrap();
         // let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
         // let rom = fs::read("roms/Prehistorik Man (USA, Europe).gb").unwrap();
