@@ -136,13 +136,13 @@ impl Timer {
             }
             0xFF06 => {
                 self.tma = value;
-                if self.timer_enable != 0 && self.state == TimerState::Reloaded {
-                    self.acc = value;
-                    self.state = TimerState::Running;
-                }
-                // if self.state != TimerState::Running {
+                // if self.timer_enable != 0 && self.state == TimerState::Reloaded {
                 //     self.acc = value;
+                //     self.state = TimerState::Running;
                 // }
+                if self.state != TimerState::Running {
+                    self.acc = value;
+                }
             }
             0xFF07 => {
                 self.timer_enable = value & 0x04;

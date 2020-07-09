@@ -460,11 +460,6 @@ impl Cpu {
     //     self.jp_addr(addr);
     // }
     pub fn call_addr(&mut self, addr: u16) {
-        // let ms = ((self.pc & 0xFF00) >> 8) as u8;
-        // let ls = (self.pc & 0x00FF) as u8;
-        // self.push(ms);
-        // self.push(ls);
-        // self.jp_addr(addr);
         self.push((self.pc >> 8) as u8);
         self.push((self.pc & 0xFF) as u8);
         self.pc = addr as u16;
@@ -509,8 +504,9 @@ impl Cpu {
     //     self.jp_addr(addr);
     // }
     pub fn jp_nn(&mut self) {
-        self.pc = self.get_imm8() as u16;
-        self.pc |= (self.get_imm8() as u16) << 8;
+        // self.pc = self.get_imm8() as u16;
+        // self.pc |= (self.get_imm8() as u16) << 8;
+        self.pc = self.get_imm16();
         self.add_cycles(4);
     }
 
@@ -1482,34 +1478,25 @@ mod tests {
 
     fn print_and_step(cpu: &mut Cpu) {
         println!(
-            "pc: {:#X}, opcode: {:#X}, halted: {}, mode3_clocks: {}, mode: {:?}, mode2_clocks: {}",
+            "pc: {:#X}, opcode: {:#X}, halted: {}",
             cpu.pc,
             cpu.mmu.get_byte(cpu.pc),
             cpu.halted,
-            cpu.mmu.gpu.mode3_clocks,
-            cpu.mmu.gpu.mode(),
-            cpu.mmu.gpu.mode2_clocks,
         );
 
-        if cpu.mmu.get_byte(cpu.pc) == 0x7E {
-            println!("STAT before: {:08b}", cpu.mmu.get_byte(0xFF41));
-            cpu.tick();
-            println!("STAT after: {:08b}", cpu.mmu.get_byte(0xFF41));
-        } else {
-            cpu.tick();
-        }
+        cpu.tick();
     }
 
     #[test]
     fn test_steps() {
-        let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
+        let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
         println!("Starting");
 
-        while cpu.pc != 0x17A {
-            cpu.tick();
-        }
+        // while cpu.pc != 0x17A {
+        //     cpu.tick();
+        // }
         print_and_step(&mut cpu);
         print_and_step(&mut cpu);
         print_and_step(&mut cpu);
