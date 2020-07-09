@@ -45,7 +45,7 @@ pub struct Timer {
     pub request_timer_int: bool,
     tima_bit: u16,
     state: TimerState,
-    clocks: usize,
+    clock: usize,
 }
 
 impl Timer {
@@ -59,31 +59,35 @@ impl Timer {
             request_timer_int: false,
             tima_bit: 9,
             state: TimerState::Running,
-            clocks: 0,
+            clock: 0,
         }
     }
 
     pub fn tick(&mut self, cycles: usize) {
-        self.clocks += cycles;
-
-        while self.clocks >= 4 {
-            self.clocks -= 4;
+        for _ in 0..cycles {
+            self.clock += 1;
             let old_signal = self.signal();
             self.divider.tick(1);
-            self.advance_state(old_signal);
+            // self.advance_state(old_signal);
+            if self.clock >= 4 {
+                self.clock -= 4;
+                self.advance_state();
+            }
+            self.detect_falling_edge(old_signal)
         }
     }
 
-    fn advance_state(&mut self, old_signal: u8) {
+    fn advance_state(&mut self) {
         match self.state {
             TimerState::Reloading => {
+                self.acc = self.tma;
                 self.request_timer_int = true;
                 self.state = TimerState::Reloaded;
             }
             TimerState::Reloaded => {
                 self.state = TimerState::Running;
             }
-            TimerState::Running => self.detect_falling_edge(old_signal),
+            TimerState::Running => (),
         }
     }
 
@@ -94,7 +98,6 @@ impl Timer {
             self.acc = self.acc.wrapping_add(1);
 
             if self.acc == 0 {
-                self.acc = self.tma;
                 self.state = TimerState::Reloading;
             }
         }
@@ -108,7 +111,13 @@ impl Timer {
     pub fn get_byte(&self, addr: u16) -> u8 {
         match addr {
             0xFF04 => self.divider.get_byte(),
-            0xFF05 => self.acc,
+            0xFF05 => {
+                if self.state == TimerState::Reloading {
+                    0
+                } else {
+                    self.acc
+                }
+            }
             0xFF06 => self.tma,
             0xFF07 => self.timer_enable | self.freq,
             _ => 0x00,
@@ -122,14 +131,17 @@ impl Timer {
                 self.divider.set_byte();
                 self.detect_falling_edge(old_signal);
             }
-            0xFF05 if self.state == TimerState::Running => {
+            0xFF05 if self.state != TimerState::Reloaded => {
                 self.acc = value;
             }
             0xFF06 => {
                 self.tma = value;
-                if self.timer_enable != 0 && self.state == TimerState::Reloaded {
+                // if self.timer_enable != 0 && self.state == TimerState::Reloaded {
+                //     self.acc = value;
+                //     self.state = TimerState::Running;
+                // }
+                if self.state != TimerState::Running {
                     self.acc = value;
-                    self.state = TimerState::Running;
                 }
             }
             0xFF07 => {

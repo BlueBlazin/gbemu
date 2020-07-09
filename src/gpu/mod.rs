@@ -18,6 +18,13 @@ const SCX_TO_WX0_COMPARE: [i16; 8] = [-7, -9, -10, -11, -12, -13, -14, -14];
 const CYCLES_IN_LINE: usize = 456;
 
 #[derive(Debug, PartialEq, Clone)]
+/// Mode 0 - HBlank
+///
+/// Mode 1 - VBlank
+///
+/// Mode 2 - OamSearch
+///
+/// Mode 3 - PixelTransfer
 pub enum GpuMode {
     OamSearch,
     PixelTransfer,
@@ -771,7 +778,7 @@ impl Gpu {
             self.stat_int_update_pending = false;
         }
 
-        let hblank_clocks = CYCLES_IN_LINE - (80 + self.mode3_clocks);
+        let hblank_clocks = CYCLES_IN_LINE - (self.mode2_clocks + self.mode3_clocks);
 
         if self.clock + cycles >= hblank_clocks {
             let cycles_left = self.clock + cycles - hblank_clocks;
@@ -779,11 +786,13 @@ impl Gpu {
             self.update_stat_int_signal();
 
             if self.position.ly > 143 {
-                self.next_mode = GpuMode::VBlank;
-
                 if self.stat.oam_int != 0 && self.emu_mode == EmulationMode::Dmg {
-                    self.request_lcd_interrupt();
+                    self.stat.mode = GpuMode::OamSearch;
+                    self.update_stat_int_signal();
+                    self.stat.mode = GpuMode::HBlank;
                 }
+
+                self.next_mode = GpuMode::VBlank;
             } else {
                 self.next_mode = GpuMode::OamSearch;
                 self.update_stat_int_signal();
@@ -800,6 +809,7 @@ impl Gpu {
     fn run_vblank(&mut self, cycles: usize) -> usize {
         if self.stat_int_update_pending {
             self.update_stat_int_signal();
+            self.request_vblank_interrupt();
             self.stat_int_update_pending = false;
         }
 
@@ -838,9 +848,7 @@ impl Gpu {
         }
 
         match self.stat.mode {
-            GpuMode::VBlank => {
-                self.request_vblank_interrupt();
-            }
+            GpuMode::VBlank => {}
             GpuMode::OamSearch => {
                 self.sprites.clear();
                 self.comparators.clear();

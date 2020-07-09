@@ -243,7 +243,7 @@ impl Cpu {
 
     fn stop_tick(&mut self) -> usize {
         self.add_cycles(4);
-        if (self.mmu.get_byte(0xFF00) & 0xF) != 0xF {
+        if self.mmu.get_byte(0xFF00) & 0xF != 0xF {
             self.leave_stop_mode();
             self.add_cycles(8);
         }
