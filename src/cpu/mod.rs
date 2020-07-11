@@ -211,10 +211,9 @@ impl Cpu {
             self.add_cycles(2);
         }
 
-        let ie = self.mmu.get_byte(0xFFFF);
         let irr = self.mmu.get_byte(0xFF0F);
 
-        let ints_pending = ie & irr & 0x1F;
+        let ints_pending = self.mmu.ie & irr & 0x1F;
 
         self.add_cycles(if self.emu_mode == EmulationMode::Cgb || self.just_halted {
             4
@@ -1334,8 +1333,9 @@ impl Cpu {
 
     /// Fetch next byte at pc from memory and increment pc.
     pub fn fetch(&mut self) -> u8 {
-        let byte = self.memory_get(self.pc);
+        let byte = self.mmu.get_byte(self.pc);
         self.pc = self.pc.wrapping_add(1);
+        self.add_cycles(4);
         byte
     }
 
@@ -1458,8 +1458,9 @@ mod tests {
         // let rom = fs::read("roms/Tetris.gb").unwrap();
         // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
         // let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
-        // let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
-        let rom = fs::read("roms/unused_hwio-GS.gb").unwrap();
+        let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
+        // let rom = fs::read("roms/bits_mode.gb").unwrap();
+        // let rom = fs::read("roms/unused_hwio-GS.gb").unwrap();
         // let rom = fs::read("roms/sources-GS.gb").unwrap();
         // let rom = fs::read("roms/rst_timing.gb").unwrap();
         // let rom = fs::read("roms/bits_mode.gb").unwrap();

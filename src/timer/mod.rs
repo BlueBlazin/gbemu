@@ -46,6 +46,7 @@ pub struct Timer {
     tima_bit: u16,
     state: TimerState,
     clock: usize,
+    tima_written_while_reload: bool,
 }
 
 impl Timer {
@@ -60,6 +61,7 @@ impl Timer {
             tima_bit: 9,
             state: TimerState::Running,
             clock: 0,
+            tima_written_while_reload: false,
         }
     }
 
@@ -80,8 +82,13 @@ impl Timer {
     fn advance_state(&mut self) {
         match self.state {
             TimerState::Reloading => {
-                self.acc = self.tma;
-                self.request_timer_int = true;
+                if !self.tima_written_while_reload {
+                    self.acc = self.tma;
+                    self.request_timer_int = true;
+                } else {
+                    self.tima_written_while_reload = false;
+                }
+
                 self.state = TimerState::Reloaded;
             }
             TimerState::Reloaded => {
@@ -133,14 +140,13 @@ impl Timer {
             }
             0xFF05 if self.state != TimerState::Reloaded => {
                 self.acc = value;
+                if self.state == TimerState::Reloading {
+                    self.tima_written_while_reload = true;
+                }
             }
             0xFF06 => {
                 self.tma = value;
-                // if self.timer_enable != 0 && self.state == TimerState::Reloaded {
-                //     self.acc = value;
-                //     self.state = TimerState::Running;
-                // }
-                if self.state != TimerState::Running {
+                if self.state == TimerState::Reloaded {
                     self.acc = value;
                 }
             }

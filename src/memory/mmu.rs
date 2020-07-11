@@ -1,7 +1,7 @@
 use crate::apu::Apu;
 use crate::cartridge::Cartridge;
 use crate::cpu::{CgbMode, EmulationMode};
-use crate::gpu::{Gpu, GpuMode, OAM_OFFSET};
+use crate::gpu::{Gpu, GpuMode};
 use crate::joypad::Joypad;
 use crate::memory::bootrom::Bootrom;
 use crate::memory::wram::Wram;
@@ -340,8 +340,6 @@ impl Mmu {
     }
 
     pub fn set_byte(&mut self, addr: u16, value: u8) {
-        println!("addr: {:#X}, value: {:010b}", addr, value);
-
         match addr {
             // 0000-3FFF   16KB ROM Bank 0
             0x0000..=0x7FFF => self.cartridge.set_byte(addr, value),

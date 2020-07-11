@@ -55,16 +55,19 @@ impl Mbc for Mbc1 {
             0x0000..=0x3FFF => match self.mode {
                 Mode::Mode0 => self.rom[addr as usize],
                 Mode::Mode1 => {
-                    let addr =
-                        (self.bank2 << 5) as usize * ROM_BANK_SIZE + (addr as usize - ROM_OFFSET);
+                    // if (addr as usize) < ROM_OFFSET {
+                    //     println!("addr: {:#X}, ROM_OFFSET: {:#X}", addr, ROM_OFFSET);
+                    // }
+
+                    // let addr =
+                    //     (self.bank2 << 5) as usize * ROM_BANK_SIZE + (addr as usize - ROM_OFFSET);
+                    // self.rom[addr]
+                    let bank = self.bank2 << 5;
+                    let addr = bank as usize * ROM_BANK_SIZE + (addr as usize - ROM_OFFSET);
                     self.rom[addr]
                 }
             },
             0x4000..=0x7FFF => {
-                // let bank = match self.mode {
-                //     Mode::RomBanking => self.rom_bank & 0x7F,
-                //     Mode::RamBanking => self.rom_bank & 0x1F,
-                // };
                 let bank = self.bank2 << 5 | self.bank1;
                 let addr = bank as usize * ROM_BANK_SIZE + (addr as usize - ROM_OFFSET);
                 self.rom[addr]
