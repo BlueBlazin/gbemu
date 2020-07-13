@@ -267,15 +267,16 @@ impl Cpu {
     fn service_pending_interrupts(&mut self) {
         self.halted = false;
 
+        self.sp = self.sp.wrapping_sub(1);
+
         self.add_cycles(12);
 
-        self.sp = self.sp.wrapping_sub(1);
         self.mmu.set_byte(self.sp, (self.pc >> 8) as u8);
 
         let mut ints = self.mmu.ie;
 
         if self.sp == 0xFF0F + 1 {
-            self.sp = 0xFF0F;
+            self.sp = self.sp.wrapping_sub(1);
             self.add_cycles(4);
             let old_irr = self.mmu.get_byte(0xFF0F);
             self.mmu.set_byte(0xFF0F, (self.pc & 0xFF) as u8);

@@ -282,6 +282,7 @@ impl Mmu {
             0xFF00..=0xFF3F => match addr {
                 0xFF00 => self.joypad.get_byte(addr),
                 0xFF01 => self.serial_out,
+                0xFF02 => 0x7E,
                 0xFF04..=0xFF07 => self.timer.get_byte(addr),
                 0xFF0F => {
                     0xE0 | (self.joypad.request_joypad_int as u8) << 4

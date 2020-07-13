@@ -368,14 +368,32 @@ impl Gpu {
     }
 
     fn handle_first_line(&mut self, cycles: usize) -> usize {
-        if self.clock + cycles >= 80 {
-            let cycles_left = self.clock + cycles - 80;
-            self.mode2_clocks = 80 + 8;
+        // if self.clock + cycles >= 80 {
+        //     let cycles_left = self.clock + cycles - 80;
+        //     self.mode2_clocks = 80 + 8;
 
-            self.next_mode = GpuMode::InitPixelTransfer;
-            self.change_mode(GpuMode::InitPixelTransfer);
+        //     self.next_mode = GpuMode::InitPixelTransfer;
+        //     self.change_mode(GpuMode::InitPixelTransfer);
 
-            self.stat_int_update_pending = false;
+        //     self.stat_int_update_pending = false;
+        //     self.lcd_on_first_line = false;
+
+        //     cycles_left
+        // } else {
+        //     self.clock += cycles;
+
+        //     0
+        // }
+
+        if self.clock + cycles >= 80 + 173 {
+            let cycles_left = self.clock + cycles - (80 + 173);
+            self.clock = 0;
+            self.mode2_clocks = 80;
+            self.mode3_clocks = 173;
+
+            self.next_mode = GpuMode::HBlank;
+            self.stat.mode = GpuMode::HBlank;
+
             self.lcd_on_first_line = false;
 
             cycles_left
@@ -515,10 +533,11 @@ impl Gpu {
             self.sprite_i += 1;
         }
 
-        if !self.cancel_sprite_fetch && self.in_sprite_fetch
-            || ((self.sprite_i < self.comparators.len())
-                && (self.lcdc.obj_enabled() || self.emu_mode == EmulationMode::Cgb)
-                && (self.comparators[self.sprite_i] == self.lx))
+        if !self.cancel_sprite_fetch
+            && (self.in_sprite_fetch
+                || ((self.sprite_i < self.comparators.len())
+                    && (self.lcdc.obj_enabled() || self.emu_mode == EmulationMode::Cgb)
+                    && (self.comparators[self.sprite_i] == self.lx)))
         {
             self.sprite_fetch_tick();
             return;
@@ -793,7 +812,7 @@ impl Gpu {
                 }
 
                 self.next_mode = GpuMode::VBlank;
-                self.request_vblank_interrupt();
+            // self.request_vblank_interrupt();
             } else {
                 self.next_mode = GpuMode::OamSearch;
             }
@@ -847,6 +866,9 @@ impl Gpu {
         }
 
         match self.stat.mode {
+            GpuMode::VBlank => {
+                self.request_vblank_interrupt();
+            }
             GpuMode::OamSearch => {
                 self.sprites.clear();
                 self.comparators.clear();

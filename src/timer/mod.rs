@@ -1,6 +1,7 @@
 use crate::cpu::EmulationMode;
 
 const COUNTER_SHIFT: [u16; 4] = [9, 3, 5, 7];
+const TRIGGER_CLOCKS: [u16; 4] = [512, 8, 32, 128];
 
 pub struct Divider {
     pub counter: u16,
@@ -10,7 +11,7 @@ impl Divider {
     pub fn new(mode: EmulationMode) -> Self {
         Self {
             counter: match mode {
-                EmulationMode::Dmg => 0x267C,
+                EmulationMode::Dmg => 0xABCC,
                 EmulationMode::Cgb => 0x1EA0,
             },
         }
@@ -70,7 +71,7 @@ impl Timer {
             self.clock += 1;
             let old_signal = self.signal();
             self.divider.tick(1);
-            // self.advance_state(old_signal);
+
             if self.clock >= 4 {
                 self.clock -= 4;
                 self.advance_state();
@@ -102,11 +103,31 @@ impl Timer {
         let new_signal = self.signal();
 
         if old_signal != 0 && new_signal == 0 {
-            self.acc = self.acc.wrapping_add(1);
+            self.increment_tima();
+        }
+    }
 
-            if self.acc == 0 {
-                self.state = TimerState::Reloading;
+    fn rapid_toggle_glitch(&mut self, value: u8) {
+        if self.timer_enable == 0 {
+            return;
+        }
+
+        let old_period = TRIGGER_CLOCKS[self.freq as usize];
+        let new_period = TRIGGER_CLOCKS[(value & 0x3) as usize];
+
+        if self.divider.counter & old_period != 0 {
+            if value & 4 == 0 || self.divider.counter & new_period != 0 {
+                self.increment_tima();
             }
+        }
+    }
+
+    #[inline]
+    fn increment_tima(&mut self) {
+        self.acc = self.acc.wrapping_add(1);
+
+        if self.acc == 0 {
+            self.state = TimerState::Reloading;
         }
     }
 
@@ -151,6 +172,7 @@ impl Timer {
                 }
             }
             0xFF07 => {
+                self.rapid_toggle_glitch(value);
                 self.timer_enable = value & 0x04;
                 self.freq = value & 0x03;
                 self.tima_bit = COUNTER_SHIFT[self.freq as usize];
