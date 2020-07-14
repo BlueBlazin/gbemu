@@ -1459,7 +1459,8 @@ mod tests {
         // let rom = fs::read("roms/Tetris.gb").unwrap();
         // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
         // let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
-        let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
+        // let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
+        let rom = fs::read("roms/Super Mario Land 2 - 6 Golden Coins (UE) (V1.2) [!].gb").unwrap();
         // let rom = fs::read("roms/bits_mode.gb").unwrap();
         // let rom = fs::read("roms/unused_hwio-GS.gb").unwrap();
         // let rom = fs::read("roms/sources-GS.gb").unwrap();
@@ -1472,10 +1473,16 @@ mod tests {
         cpu.simulate_bootrom();
         println!("Starting");
 
-        // let mut i = 0;
+        let mut i = 1;
 
         loop {
             cpu.tick();
+
+            if i % 10 == 0 {
+                cpu.mmu.joypad.press_key(Key::Start);
+            } else if i % 10 == 1 {
+                cpu.mmu.joypad.release_key(Key::Start);
+            }
         }
     }
 

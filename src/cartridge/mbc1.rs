@@ -50,7 +50,7 @@ impl Mbc for Mbc1 {
                 Mode::Mode0 => self.rom[addr as usize],
                 Mode::Mode1 => {
                     let bank = self.bank2 << 5;
-                    let addr = bank as usize * ROM_BANK_SIZE + (addr as usize - ROM_OFFSET);
+                    let addr = bank as usize * ROM_BANK_SIZE + addr as usize;
                     self.rom[addr]
                 }
             },
