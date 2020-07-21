@@ -272,7 +272,7 @@ pub struct Gpu {
 
     next_mode: GpuMode,
 
-    lcd_on_first_line: bool,
+    first_line0: bool,
     line0_clocks: usize,
 }
 
@@ -327,7 +327,7 @@ impl Gpu {
 
             next_mode: GpuMode::OamSearch,
 
-            lcd_on_first_line: false,
+            first_line0: true,
             line0_clocks: 0,
         }
     }
@@ -345,15 +345,15 @@ impl Gpu {
             return;
         }
 
-        if self.lcd_on_first_line {
-            cycles = self.handle_first_line(cycles);
-            if cycles == 0 {
-                return;
-            }
+        if self.first_line0 {
+            cycles = self.line0_tick(cycles);
         }
 
         while cycles > 0 {
             if self.stat.mode != self.next_mode {
+                if self.next_mode == GpuMode::OamSearch || self.next_mode == GpuMode::VBlank {
+                    self.update_stat_int_signal();
+                }
                 self.change_mode(self.next_mode.clone());
             }
 
@@ -367,20 +367,27 @@ impl Gpu {
         }
     }
 
-    fn handle_first_line(&mut self, cycles: usize) -> usize {
-        if self.clock + cycles >= 80 {
-            let cycles_left = self.clock + cycles - 80;
-            self.mode2_clocks = 80 + 8;
+    fn line0_tick(&mut self, mut cycles: usize) -> usize {
+        if self.line0_clocks == 0 {
+            if self.position.wy == 0 {
+                self.wy_triggered = true;
+            } else {
+                self.wy_triggered = false;
+            }
+        }
 
-            self.next_mode = GpuMode::InitPixelTransfer;
-            self.change_mode(GpuMode::InitPixelTransfer);
+        if self.line0_clocks + cycles >= 80 - 2 {
+            cycles = self.line0_clocks + cycles - (80 - 2);
+            self.line0_clocks = 80 - 2;
 
-            self.stat_int_update_pending = false;
-            self.lcd_on_first_line = false;
+            self.mode2_clocks = 80 - 2 + 8;
+            self.stat.mode = GpuMode::InitPixelTransfer;
 
-            cycles_left
+            self.first_line0 = false;
+
+            cycles
         } else {
-            self.clock += cycles;
+            self.line0_clocks += cycles;
 
             0
         }
@@ -447,7 +454,7 @@ impl Gpu {
 
     fn run_init_pixel_transfer(&mut self, cycles: usize) -> usize {
         if self.stat_int_update_pending {
-            self.update_stat_int_signal();
+            // self.update_stat_int_signal();
             self.stat_int_update_pending = false;
         }
 
@@ -784,7 +791,7 @@ impl Gpu {
         if self.clock + cycles >= hblank_clocks {
             let cycles_left = self.clock + cycles - hblank_clocks;
             self.position.ly += 1;
-            self.update_stat_int_signal();
+            // self.update_stat_int_signal();
 
             if self.position.ly > 143 {
                 if self.stat.oam_int != 0 && self.emu_mode == EmulationMode::Dmg {
@@ -850,6 +857,7 @@ impl Gpu {
         match self.stat.mode {
             GpuMode::VBlank => {
                 self.request_vblank_interrupt();
+                self.update_stat_int_signal();
             }
             GpuMode::OamSearch => {
                 self.sprites.clear();
@@ -903,7 +911,7 @@ impl Gpu {
             _ => false,
         };
 
-        if self.lyc_int_signal && self.stat.lyc_int != 0 {
+        if self.lyc_int_signal && self.stat.lyc_int != 0 && self.position.ly != 0 {
             self.stat_int_signal = true;
         }
 
@@ -975,9 +983,29 @@ impl Gpu {
                 }
 
                 // 0ff -> on
+                // if old_display_enable == 0 && self.lcdc.display_enable != 0 {
+                //     self.clock = 0;
+                //     self.lcd_on_first_line = true;
+
+                //     // pseudo lyc = 0 comparison
+                //     let lyc = self.position.lyc;
+                //     self.stat.mode = GpuMode::InitPixelTransfer;
+                //     self.position.lyc = 0;
+                //     self.update_stat_int_signal();
+                //     self.position.lyc = lyc;
+                //     self.stat.mode = GpuMode::HBlank;
+                // }
                 if old_display_enable == 0 && self.lcdc.display_enable != 0 {
                     self.clock = 0;
-                    self.lcd_on_first_line = true;
+                    self.line0_clocks = 0;
+
+                    self.sprites.clear();
+                    self.comparators.clear();
+                    self.locations.clear();
+                    self.search_idx = 0;
+                    self.mode2_clocks = 0;
+
+                    self.mode3_clocks = 173;
 
                     // pseudo lyc = 0 comparison
                     let lyc = self.position.lyc;
@@ -985,7 +1013,9 @@ impl Gpu {
                     self.position.lyc = 0;
                     self.update_stat_int_signal();
                     self.position.lyc = lyc;
+
                     self.stat.mode = GpuMode::HBlank;
+                    self.first_line0 = true;
                 }
 
                 // if old_display_enable != 0 && self.lcdc.display_enable == 0 {

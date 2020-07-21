@@ -316,12 +316,12 @@ impl Cpu {
 				self.set_addr_imm(addr, value);
 			}
 			0xF2 => {
-				let addr = 0xFF00 | (self.get_r8(&R8::C) as u16);
+				let addr = 0xFF00 + (self.get_r8(&R8::C) as u16);
 				let value = self.get_addr_imm(addr);
 				self.set_r8(R8::A, value);
 			}
 			0xE2 => {
-				let addr = 0xFF00 | (self.get_r8(&R8::C) as u16);
+				let addr = 0xFF00 + (self.get_r8(&R8::C) as u16);
 				self.set_addr_imm(addr, self.get_r8(&R8::A));
 			}
 			0x3A => {
@@ -341,12 +341,12 @@ impl Cpu {
 				self.set_addr_inc(value);
 			}
 			0xE0 => {
-				let addr = 0xFF00 | (self.fetch() as u16);
+				let addr = 0xFF00 + (self.fetch() as u16);
 				let value = self.get_r8(&R8::A);
 				self.set_addr_imm(addr, value);
 			}
 			0xF0 => {
-				let addr = 0xFF00 | (self.fetch() as u16);
+				let addr = 0xFF00 + (self.fetch() as u16);
 				let value = self.get_addr_imm(addr);
 				self.set_r8(R8::A, value);
 			}
