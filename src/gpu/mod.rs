@@ -351,9 +351,6 @@ impl Gpu {
 
         while cycles > 0 {
             if self.stat.mode != self.next_mode {
-                if self.next_mode == GpuMode::OamSearch || self.next_mode == GpuMode::VBlank {
-                    self.update_stat_int_signal();
-                }
                 self.change_mode(self.next_mode.clone());
             }
 
@@ -453,7 +450,7 @@ impl Gpu {
 
     fn run_init_pixel_transfer(&mut self, cycles: usize) -> usize {
         if self.stat_int_update_pending {
-            // self.update_stat_int_signal();
+            self.update_stat_int_signal();
             self.stat_int_update_pending = false;
         }
 
@@ -852,7 +849,7 @@ impl Gpu {
         match self.stat.mode {
             GpuMode::VBlank => {
                 self.request_vblank_interrupt();
-                self.update_stat_int_signal();
+                // self.update_stat_int_signal();
             }
             GpuMode::OamSearch => {
                 self.sprites.clear();
@@ -906,7 +903,7 @@ impl Gpu {
             _ => false,
         };
 
-        if self.lyc_int_signal && self.stat.lyc_int != 0 && self.position.ly != 0 {
+        if self.lyc_int_signal && self.stat.lyc_int != 0 {
             self.stat_int_signal = true;
         }
 
