@@ -425,7 +425,6 @@ impl Gpu {
             self.search_idx += 1;
 
             if self.clock == 80 {
-                // println!("mode 2 clocks: {}", self.mode2_clocks);
                 self.next_mode = GpuMode::InitPixelTransfer;
                 return cycles;
             }
@@ -461,10 +460,6 @@ impl Gpu {
         if self.clock + cycles >= 5 {
             let cycles_left = self.clock + cycles - 5;
             self.mode3_clocks = 5;
-
-            // if self.position.ly == 0 {
-            //     self.mode3_clocks += 8;
-            // }
 
             if self.position.ly == self.position.wy {
                 self.wy_triggered = true;
@@ -791,7 +786,7 @@ impl Gpu {
         if self.clock + cycles >= hblank_clocks {
             let cycles_left = self.clock + cycles - hblank_clocks;
             self.position.ly += 1;
-            // self.update_stat_int_signal();
+            self.update_stat_int_signal();
 
             if self.position.ly > 143 {
                 if self.stat.oam_int != 0 && self.emu_mode == EmulationMode::Dmg {
