@@ -49,6 +49,7 @@ impl From<&GpuMode> for u8 {
 pub struct PixelFifoItem {
     pub value: u8,
     pub palette_num: u8,
+    // pub bg_to_obj_prio: u8,
     pub obj_to_bg_prio: u8,
     pub obj_to_obj_prio: u8,
 }
@@ -64,7 +65,7 @@ impl BgFifo {
         }
     }
 
-    pub fn push_row(&mut self, mut low: u8, mut high: u8, palette_num: u8) {
+    pub fn push_row(&mut self, mut low: u8, mut high: u8, palette_num: u8, flip_x: bool) {
         for _ in 0..8 {
             let value = ((high >> 7) << 1) | (low >> 7);
 
@@ -185,6 +186,7 @@ pub struct Fetcher {
     pub current_tile: u8,
     pub low: u8,
     pub high: u8,
+    pub current_tile_attr: u8,
 }
 
 impl Fetcher {
@@ -197,6 +199,7 @@ impl Fetcher {
             current_tile: 0,
             low: 0,
             high: 0,
+            current_tile_attr: 0,
         }
     }
 
@@ -704,21 +707,37 @@ impl Gpu {
                 let addr = map + (self.fetcher.y / 8) as u16 * 32 + x as u16;
                 self.fetcher.current_tile = self.get_vram_byte(addr, 0);
 
+                if self.emu_mode == EmulationMode::Cgb {
+                    self.fetcher.current_tile_attr = self.get_vram_byte(addr, 1);
+                }
+
                 self.fetcher.advance_state();
             }
             FetcherState::ReadTileLow => {
-                let row = self.fetcher.y % 8;
+                let row = if self.fetcher.current_tile_attr & 0x40 != 0 {
+                    (self.fetcher.y % 8) ^ 0x7
+                } else {
+                    self.fetcher.y % 8
+                };
+
                 let addr = self.tiledata_addr(self.lcdc.tiledata_sel, self.fetcher.current_tile);
 
-                self.fetcher.low = self.get_vram_byte(addr + row as u16 * 2, 0);
+                let bank = (self.fetcher.current_tile_attr >> 3 & 0x1) as usize;
+                self.fetcher.low = self.get_vram_byte(addr + row as u16 * 2, bank);
 
                 self.fetcher.advance_state();
             }
             FetcherState::ReadTileHigh => {
-                let row = self.fetcher.y % 8;
+                let row = if self.fetcher.current_tile_attr & 0x40 != 0 {
+                    (self.fetcher.y % 8) ^ 0x7
+                } else {
+                    self.fetcher.y % 8
+                };
+
                 let addr = self.tiledata_addr(self.lcdc.tiledata_sel, self.fetcher.current_tile);
 
-                self.fetcher.high = self.get_vram_byte(addr + row as u16 * 2 + 1, 0);
+                let bank = (self.fetcher.current_tile_attr >> 3 & 0x1) as usize;
+                self.fetcher.high = self.get_vram_byte(addr + row as u16 * 2 + 1, bank);
 
                 if self.wx_triggered {
                     self.fetcher.win_tile_x = (self.fetcher.win_tile_x + 1) % 32;
@@ -727,8 +746,12 @@ impl Gpu {
                 self.fetcher.advance_state();
 
                 if self.bg_fifo.is_empty() {
-                    self.bg_fifo
-                        .push_row(self.fetcher.low, self.fetcher.high, 0);
+                    self.bg_fifo.push_row(
+                        self.fetcher.low,
+                        self.fetcher.high,
+                        self.fetcher.current_tile_attr & 0x7,
+                        self.fetcher.current_tile_attr & 0x20 != 0,
+                    );
 
                     self.fetcher.state = FetcherState::Sleep0;
                 }
@@ -739,16 +762,24 @@ impl Gpu {
                 self.fetcher.advance_state();
 
                 if self.bg_fifo.is_empty() {
-                    self.bg_fifo
-                        .push_row(self.fetcher.low, self.fetcher.high, 0);
+                    self.bg_fifo.push_row(
+                        self.fetcher.low,
+                        self.fetcher.high,
+                        self.fetcher.current_tile_attr & 0x7,
+                        self.fetcher.current_tile_attr & 0x20 != 0,
+                    );
 
                     self.fetcher.state = FetcherState::Sleep0;
                 }
             }
             FetcherState::Push1 => {
                 if self.bg_fifo.is_empty() {
-                    self.bg_fifo
-                        .push_row(self.fetcher.low, self.fetcher.high, 0);
+                    self.bg_fifo.push_row(
+                        self.fetcher.low,
+                        self.fetcher.high,
+                        self.fetcher.current_tile_attr & 0x7,
+                        self.fetcher.current_tile_attr & 0x20 != 0,
+                    );
 
                     self.fetcher.advance_state();
                 }
@@ -867,7 +898,7 @@ impl Gpu {
                 // further offset for scroll x
                 self.lx -= (self.position.scx % 8) as i16;
                 // push 8 'junk' pixels to fifo
-                self.bg_fifo.push_row(0, 0, 0);
+                self.bg_fifo.push_row(0, 0, 0, false);
                 // reset fetcher
                 self.fetcher.x = 0;
                 self.fetcher.state = FetcherState::Sleep0;
@@ -923,7 +954,7 @@ impl Gpu {
     }
 
     fn get_rgb(&self, value: u8, palette: u8) -> (u8, u8, u8) {
-        match (palette >> (2 * value)) & 0x03 {
+        match (palette >> (2 * value)) & 0x3 {
             0 => (224, 247, 208),
             1 => (136, 192, 112),
             2 => (52, 104, 86),
