@@ -378,7 +378,7 @@ impl Gpu {
             self.line0_clocks = 80 - 2;
 
             self.mode2_clocks = 80 - 2 + 8;
-            self.stat.mode = GpuMode::InitPixelTransfer;
+            self.next_mode = GpuMode::InitPixelTransfer;
 
             self.first_line0 = false;
 
