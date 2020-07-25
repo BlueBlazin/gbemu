@@ -111,7 +111,6 @@ pub struct LcdPosition {
     pub scy: u8,
     pub scx: u8,
     pub ly: u8,
-    pub lx: u8,
     pub lyc: u8,
     pub wy: u8,
     pub wx: u8,

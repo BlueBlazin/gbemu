@@ -531,11 +531,10 @@ impl Gpu {
             self.sprite_i += 1;
         }
 
-        if !self.cancel_sprite_fetch
-            && (self.in_sprite_fetch
-                || ((self.sprite_i < self.comparators.len())
-                    && (self.lcdc.obj_enabled() || self.emu_mode == EmulationMode::Cgb)
-                    && (self.comparators[self.sprite_i] == self.lx)))
+        if !self.cancel_sprite_fetch && self.in_sprite_fetch
+            || ((self.sprite_i < self.comparators.len())
+                && (self.lcdc.obj_enabled() || self.emu_mode == EmulationMode::Cgb)
+                && (self.comparators[self.sprite_i] == self.lx))
         {
             self.sprite_fetch_tick();
             return;
@@ -670,7 +669,7 @@ impl Gpu {
     fn fifo_tick(&mut self) {
         if let Some(px) = self.bg_fifo.pop() {
             let mut draw_sprite = false;
-            let mut bg_enabled = true;
+            // let mut bg_enabled = true;
 
             let spx = match self.obj_fifo.pop() {
                 Some(spx) => {
@@ -685,7 +684,8 @@ impl Gpu {
                 return;
             }
 
-            let mut value = if self.lcdc.lcdc0 != 0 { px.value } else { 0 };
+            // let mut value = if self.lcdc.lcdc0 != 0 { px.value } else { 0 };
+            let mut value = px.value;
 
             let mut palette = match self.emu_mode {
                 EmulationMode::Dmg => self.dmgp.bgp as u16,
@@ -697,8 +697,10 @@ impl Gpu {
             };
 
             if value != 0 && (spx.obj_to_bg_prio | px.bg_to_oam_prio) != 0 {
-                if self.emu_mode == EmulationMode::Cgb && self.lcdc.lcdc0 == 1 {
-                    draw_sprite = false;
+                if self.emu_mode == EmulationMode::Cgb {
+                    if self.lcdc.lcdc0 == 1 {
+                        draw_sprite = false;
+                    }
                 } else {
                     draw_sprite = false;
                 }
@@ -762,6 +764,13 @@ impl Gpu {
                     self.fetcher.current_tile_attr = self.get_vram_byte(addr, 1);
                 }
 
+                // if self.position.ly == 56 {
+                //     println!(
+                //         "lx: {}, current_tile: {}, addr: {:#X}, attr: {:#X}",
+                //         self.lx, self.fetcher.current_tile, addr, self.fetcher.current_tile_attr,
+                //     );
+                // }
+
                 self.fetcher.advance_state();
             }
             FetcherState::ReadTileLow => {
@@ -772,6 +781,13 @@ impl Gpu {
                 };
 
                 let addr = self.tiledata_addr(self.lcdc.tiledata_sel, self.fetcher.current_tile);
+
+                // if self.position.ly == 56 {
+                //     println!(
+                //         "lx: {}, current_tile: {}, addr: {:#X}",
+                //         self.lx, self.fetcher.current_tile, addr,
+                //     );
+                // }
 
                 let bank = ((self.fetcher.current_tile_attr >> 3) & 0x1) as usize;
                 self.fetcher.low = self.get_vram_byte(addr + row as u16 * 2, bank);
@@ -792,6 +808,17 @@ impl Gpu {
 
                 if self.wx_triggered {
                     self.fetcher.win_tile_x = (self.fetcher.win_tile_x + 1) % 32;
+                }
+
+                if self.position.ly == 56 {
+                    println!(
+                        "lx: {}, current_tile: {}, low: {:#10b}, high: {:#10b}, palette: {}",
+                        self.lx,
+                        self.fetcher.current_tile,
+                        self.fetcher.low,
+                        self.fetcher.high,
+                        self.fetcher.current_tile_attr & 0x7,
+                    );
                 }
 
                 self.fetcher.advance_state();
