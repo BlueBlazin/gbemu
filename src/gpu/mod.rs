@@ -49,9 +49,9 @@ impl From<&GpuMode> for u8 {
 pub struct PixelFifoItem {
     pub value: u8,
     pub palette_num: u8,
-    // pub bg_to_obj_prio: u8,
     pub obj_to_bg_prio: u8,
     pub obj_to_obj_prio: u8,
+    pub bg_to_oam_prio: u8,
 }
 
 pub struct BgFifo {
@@ -65,7 +65,19 @@ impl BgFifo {
         }
     }
 
-    pub fn push_row(&mut self, mut low: u8, mut high: u8, palette_num: u8, flip_x: bool) {
+    pub fn push_row(
+        &mut self,
+        mut low: u8,
+        mut high: u8,
+        palette_num: u8,
+        flip_x: bool,
+        bg_to_oam_prio: u8,
+    ) {
+        if flip_x {
+            low = low.reverse_bits();
+            high = high.reverse_bits();
+        }
+
         for _ in 0..8 {
             let value = ((high >> 7) << 1) | (low >> 7);
 
@@ -74,6 +86,7 @@ impl BgFifo {
                 palette_num,
                 obj_to_bg_prio: 0,
                 obj_to_obj_prio: 0,
+                bg_to_oam_prio,
             });
 
             low <<= 1;
@@ -128,12 +141,13 @@ impl ObjFifo {
 
             let old_item = &self.q[i];
 
-            if value != 0 && old_item.value == 0 {
+            if value != 0 && (old_item.value == 0 || obj_to_bg_prio < old_item.obj_to_obj_prio) {
                 self.q[i] = PixelFifoItem {
                     value,
                     palette_num,
                     obj_to_bg_prio,
                     obj_to_obj_prio,
+                    bg_to_oam_prio: 0,
                 };
             }
 
@@ -592,15 +606,30 @@ impl Gpu {
 
                 let addr = 0x8000u16 + tile_num * 16 + y as u16 * 2;
 
-                let low = self.get_vram_byte(addr, 0);
-                let high = self.get_vram_byte(addr + 1, 0);
+                let bank = match self.emu_mode {
+                    EmulationMode::Dmg => 0,
+                    EmulationMode::Cgb => sprite.vram_bank,
+                };
+
+                let low = self.get_vram_byte(addr, bank);
+                let high = self.get_vram_byte(addr + 1, bank);
+
+                let palette_num = match self.emu_mode {
+                    EmulationMode::Dmg => sprite.obp1 as u8,
+                    EmulationMode::Cgb => sprite.obp_num,
+                };
+
+                let obj_to_obj_prio = match self.emu_mode {
+                    EmulationMode::Dmg => 0,
+                    EmulationMode::Cgb => i as u8,
+                };
 
                 self.obj_fifo.push_row(
                     low,
                     high,
-                    sprite.obp1 as u8,
+                    palette_num,
                     sprite.obj_to_bg_prio,
-                    0,
+                    obj_to_obj_prio,
                     sprite.mirror_horizontal,
                 );
 
@@ -657,20 +686,42 @@ impl Gpu {
             }
 
             let mut value = if self.lcdc.lcdc0 != 0 { px.value } else { 0 };
-            let mut palette = self.dmgp.bgp;
 
-            if spx.obj_to_bg_prio != 0 && value != 0 {
-                draw_sprite = false;
+            let mut palette = match self.emu_mode {
+                EmulationMode::Dmg => self.dmgp.bgp as u16,
+                EmulationMode::Cgb => {
+                    let palette_idx = px.palette_num as usize * 8;
+                    let color_idx = palette_idx + value as usize * 2;
+                    (self.bgp_ram[color_idx + 1] as u16) << 8 | self.bgp_ram[color_idx + 0] as u16
+                }
+            };
+
+            if value != 0 && (spx.obj_to_bg_prio | px.bg_to_oam_prio) != 0 {
+                if self.emu_mode == EmulationMode::Cgb && self.lcdc.lcdc0 == 1 {
+                    draw_sprite = false;
+                } else {
+                    draw_sprite = false;
+                }
             }
 
             if draw_sprite {
                 value = spx.value;
 
-                palette = if spx.palette_num == 0 {
-                    self.dmgp.obp0
-                } else {
-                    self.dmgp.obp1
-                };
+                palette = match self.emu_mode {
+                    EmulationMode::Dmg => {
+                        if spx.palette_num == 0 {
+                            self.dmgp.obp0 as u16
+                        } else {
+                            self.dmgp.obp1 as u16
+                        }
+                    }
+                    EmulationMode::Cgb => {
+                        let palette_idx = spx.palette_num as usize * 8;
+                        let color_idx = palette_idx + value as usize * 2;
+                        (self.obp_ram[color_idx + 1] as u16) << 8
+                            | self.obp_ram[color_idx + 0] as u16
+                    }
+                }
             }
 
             let (r, g, b) = self.get_rgb(value, palette);
@@ -722,7 +773,7 @@ impl Gpu {
 
                 let addr = self.tiledata_addr(self.lcdc.tiledata_sel, self.fetcher.current_tile);
 
-                let bank = (self.fetcher.current_tile_attr >> 3 & 0x1) as usize;
+                let bank = ((self.fetcher.current_tile_attr >> 3) & 0x1) as usize;
                 self.fetcher.low = self.get_vram_byte(addr + row as u16 * 2, bank);
 
                 self.fetcher.advance_state();
@@ -736,7 +787,7 @@ impl Gpu {
 
                 let addr = self.tiledata_addr(self.lcdc.tiledata_sel, self.fetcher.current_tile);
 
-                let bank = (self.fetcher.current_tile_attr >> 3 & 0x1) as usize;
+                let bank = ((self.fetcher.current_tile_attr >> 3) & 0x1) as usize;
                 self.fetcher.high = self.get_vram_byte(addr + row as u16 * 2 + 1, bank);
 
                 if self.wx_triggered {
@@ -751,6 +802,7 @@ impl Gpu {
                         self.fetcher.high,
                         self.fetcher.current_tile_attr & 0x7,
                         self.fetcher.current_tile_attr & 0x20 != 0,
+                        self.fetcher.current_tile_attr & 0x80,
                     );
 
                     self.fetcher.state = FetcherState::Sleep0;
@@ -767,6 +819,7 @@ impl Gpu {
                         self.fetcher.high,
                         self.fetcher.current_tile_attr & 0x7,
                         self.fetcher.current_tile_attr & 0x20 != 0,
+                        self.fetcher.current_tile_attr & 0x80,
                     );
 
                     self.fetcher.state = FetcherState::Sleep0;
@@ -779,6 +832,7 @@ impl Gpu {
                         self.fetcher.high,
                         self.fetcher.current_tile_attr & 0x7,
                         self.fetcher.current_tile_attr & 0x20 != 0,
+                        self.fetcher.current_tile_attr & 0x80,
                     );
 
                     self.fetcher.advance_state();
@@ -898,7 +952,7 @@ impl Gpu {
                 // further offset for scroll x
                 self.lx -= (self.position.scx % 8) as i16;
                 // push 8 'junk' pixels to fifo
-                self.bg_fifo.push_row(0, 0, 0, false);
+                self.bg_fifo.push_row(0, 0, 0, false, 0);
                 // reset fetcher
                 self.fetcher.x = 0;
                 self.fetcher.state = FetcherState::Sleep0;
@@ -953,12 +1007,25 @@ impl Gpu {
         self.request_lcd_int = true;
     }
 
-    fn get_rgb(&self, value: u8, palette: u8) -> (u8, u8, u8) {
-        match (palette >> (2 * value)) & 0x3 {
-            0 => (224, 247, 208),
-            1 => (136, 192, 112),
-            2 => (52, 104, 86),
-            _ => (8, 23, 33),
+    fn get_rgb(&self, value: u8, palette: u16) -> (u8, u8, u8) {
+        match self.emu_mode {
+            EmulationMode::Dmg => match (palette >> (2 * value)) & 0x3 {
+                0 => (224, 247, 208),
+                1 => (136, 192, 112),
+                2 => (52, 104, 86),
+                _ => (8, 23, 33),
+            },
+            EmulationMode::Cgb => {
+                let r = (palette & 0x001F) >> 0;
+                let g = (palette & 0x03E0) >> 5;
+                let b = (palette & 0x7C00) >> 10;
+
+                (
+                    ((r << 3) | (r >> 2)) as u8,
+                    ((g << 3) | (g >> 2)) as u8,
+                    ((b << 3) | (b >> 2)) as u8,
+                )
+            }
         }
     }
 

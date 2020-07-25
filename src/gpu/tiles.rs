@@ -7,7 +7,7 @@ pub struct Sprite {
     pub mirror_horizontal: bool,
     pub obp1: bool,
     pub vram_bank: usize,
-    pub obp_num: usize,
+    pub obp_num: u8,
 }
 
 impl From<&[u8]> for Sprite {
@@ -21,7 +21,7 @@ impl From<&[u8]> for Sprite {
             mirror_horizontal: (bytes[3] & 0x20) != 0,
             obp1: (bytes[3] & 0x10) != 0,
             vram_bank: ((bytes[3] & 0x08) >> 3) as usize,
-            obp_num: (bytes[3] & 0x07) as usize,
+            obp_num: bytes[3] & 0x07,
         }
     }
 }
