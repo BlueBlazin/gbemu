@@ -156,15 +156,15 @@ impl Cpu {
 
     pub fn run_till_event(&mut self) -> Event {
         while self.event_cycles < MAX_CYCLES {
-            self.event_cycles += self.tick();
-
             if self.mmu.gpu.vblank_event {
                 self.mmu.gpu.vblank_event = false;
                 return Event::VBlank;
             }
+
+            self.event_cycles += self.tick();
         }
 
-        self.event_cycles = 0;
+        self.event_cycles -= MAX_CYCLES;
         Event::MaxCycles
     }
 
@@ -268,7 +268,7 @@ impl Cpu {
     }
 
     fn gdma_tick(&mut self) {
-        // self.cycles += 4;
+        self.cycles += 4;
         let cycles = self.mmu.gdma_tick();
         self.add_cycles(cycles);
     }
@@ -1334,7 +1334,7 @@ impl Cpu {
 
         self.mmu.timer_tick(cycles);
 
-        if !self.stopped && !self.halted && self.mmu.oam_dma.active {
+        if !self.stopped && self.mmu.oam_dma.active {
             self.mmu.oam_dma_tick(cycles);
         }
 

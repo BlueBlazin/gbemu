@@ -39,13 +39,14 @@ impl Emulator {
     }
 
     pub fn update(&mut self) {
-        loop {
-            self.cpu.frame();
-            if let (Some(left), Some(right)) = self.cpu.mmu.apu.get_next_buffer() {
-                // self.play_audio_sample(left, right);
-                break;
-            }
-        }
+        // loop {
+        //     self.cpu.frame();
+        //     if let (Some(left), Some(right)) = self.cpu.mmu.apu.get_next_buffer() {
+        //         // self.play_audio_sample(left, right);
+        //         break;
+        //     }
+        // }
+        self.cpu.frame();
     }
 
     fn play_audio_sample(&mut self, mut left: Vec<f32>, mut right: Vec<f32>) {

@@ -43,10 +43,25 @@
 }
 
 .rom-upload {
-  height: 70px;
+  height: 50px;
   display: flex;
   align-items: center;
   color: #ddd;
+}
+
+.file {
+  height: 50px;
+  width: 400px;
+  background-color: rgba(255, 255, 255, 0.15);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 4px;
+}
+
+#input {
+  height: 50px;
+  width: 400px;
 }
 
 .border {

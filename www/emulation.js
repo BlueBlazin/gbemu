@@ -40,7 +40,7 @@ export class Emulation {
   }
 
   emulationDriver() {
-    requestAnimationFrame(() => this.emulationDriver());
+    requestAnimationFrame(this.emulationDriver.bind(this));
 
     this.runTill();
   }
