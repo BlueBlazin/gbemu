@@ -1,62 +1,72 @@
-body {
-  /* background-color: #5f75a5; */
-  background-color: #121720;
+* {
+  margin: 0;
+  padding: 0;
 }
 
-#gbemu-canvas {
-  /* border: 1px solid black; */
-  /* image-rendering: pixelated; */
-  /* padding: 1px; */
-  width: 320px;
-  height: 280px;
-  /* width: 240px;
-  height: 210px; */
-  border: 2px solid #002907;
-  border-right: 4px solid #002907;
-  border-bottom: 4px solid #002907;
-  padding: 0;
-  /* background-color: #9bcc86; */
-  background-color: #080e05;
+.container {
+  width: 100vw;
+  height: 100vh;
+  /* background-color: #202129; */
+  background-color: #292b35;
+  /* background: rgb(108, 160, 204); */
+  background: radial-gradient(
+    circle,
+    rgb(63, 70, 90) 0%,
+    rgb(33, 43, 68) 35%,
+    rgb(36, 39, 43) 100%
+  );
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.header {
+  width: 100vw;
+  height: 60px;
+  background-color: rgb(13, 20, 39);
+  /* color: rgb(95, 178, 247); */
+  color: rgb(44, 149, 248);
+
+  font-family: cursive;
+  font-size: 28px;
+  font-weight: bold;
+  line-height: 60px;
+
+  box-sizing: border-box;
+  padding-left: 50px;
+  transition: color 0.25s;
+}
+
+.header:hover {
+  color: rgb(217, 230, 255);
+}
+
+.rom-upload {
+  height: 70px;
+  display: flex;
+  align-items: center;
+  color: #ddd;
+}
+
+.border {
+  width: 553px;
+  height: 486px;
+  background: url(./border.png);
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center;
+
   position: relative;
 }
 
-/* #gbemu-canvas::after {
+#gbemu-canvas {
   width: 320px;
   height: 280px;
+
   position: absolute;
-  top: 0;
-  left: 0;
-  content: "";
-  background-image: linear-gradient(45deg, #808080 25%, transparent 25%),
-    linear-gradient(-45deg, #808080 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #808080 75%),
-    linear-gradient(-45deg, transparent 75%, #808080 75%);
-  background-size: 20px 20px;
-  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
-  z-index: 10;
-} */
-
-.container {
-  display: flex;
-  justify-content: center;
-  margin-top: 30px;
-}
-
-.canvas-shadow-container {
-  margin: 20px;
-  padding: 0;
-}
-
-.canvas-container {
-  height: 525px;
-  padding: 20px;
-  background-color: #ccc;
-  /* background-color: #93bb82; */
-  /* background-color: #081721; */
-  /* background-color: #cadfbb; */
-  /* background-color: #d0bbdf; */
-  border-radius: 10px;
-  border-bottom-right-radius: 75px;
+  top: 90px;
+  left: 115px;
 }
 
 canvas {
@@ -67,66 +77,4 @@ canvas {
   image-rendering: -o-crisp-edges; /* OS X & Windows Opera (12.02+) */
   image-rendering: pixelated; /* Awesome future-browsers */
   -ms-interpolation-mode: nearest-neighbor; /* IE */
-}
-
-.buttons-container {
-}
-
-.buttons {
-  padding: 25px 15px;
-  display: flex;
-  justify-content: space-between;
-}
-
-.keypad {
-  width: 75px;
-}
-
-.keypad-mid-section {
-  display: flex;
-}
-
-.btn {
-  width: 25px;
-  height: 25px;
-  background-color: black;
-  margin: 0 auto;
-}
-
-.circle-btn-container {
-  transform: rotate(35deg);
-}
-
-.circle-btn {
-  width: 45px;
-  height: 45px;
-  border-radius: 50%;
-  color: white;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  margin: 0 10px;
-  margin-bottom: 10px;
-}
-
-.circle-a {
-  background-color: rgb(255, 66, 66);
-}
-
-.circle-b {
-  background-color: rgb(255, 66, 66);
-}
-
-.long-btn-container {
-  display: flex;
-  justify-content: center;
-}
-
-.long-btn {
-  width: 55px;
-  height: 15px;
-  background-color: #888;
-  margin: 5px;
-  transform: rotate(-20deg);
-  border-radius: 5px;
 }

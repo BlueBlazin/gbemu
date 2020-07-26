@@ -19,7 +19,9 @@ canvas.width = PIXEL_SIZE * WIDTH;
 canvas.height = PIXEL_SIZE * HEIGHT;
 const ctx = canvas.getContext("2d", { alpha: false });
 
-ctx.fillStyle = "#080e05";
+// ctx.fillStyle = "#aaaabb";
+// ctx.fillStyle = "#a4b2bf";
+ctx.fillStyle = "#6a737b";
 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
 /*********************************************************
