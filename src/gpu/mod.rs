@@ -291,6 +291,8 @@ pub struct Gpu {
 
     first_line0: bool,
     line0_clocks: usize,
+
+    pub vblank_event: bool,
 }
 
 impl Gpu {
@@ -346,6 +348,8 @@ impl Gpu {
 
             first_line0: true,
             line0_clocks: 0,
+
+            vblank_event: false,
         }
     }
 
@@ -905,7 +909,8 @@ impl Gpu {
                 }
 
                 self.next_mode = GpuMode::VBlank;
-            // self.request_vblank_interrupt();
+                // self.request_vblank_interrupt();
+                self.vblank_event = true;
             } else {
                 self.next_mode = GpuMode::OamSearch;
             }

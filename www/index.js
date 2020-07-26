@@ -1,156 +1,171 @@
-import { Emulator } from "gbemu";
-import { memory } from "gbemu/gbemu_bg";
+import { Emulation } from "./emulation";
 
-const WIDTH = 160;
-const HEIGHT = 144;
-const CHANNELS = 4;
-const PIXEL_SIZE = 1;
-
-/*********************************************************
- *  Canvas
- **********************************************************/
-
-const canvas = document.getElementById("gbemu-canvas");
-canvas.width = PIXEL_SIZE * WIDTH;
-canvas.height = PIXEL_SIZE * HEIGHT;
-const ctx = canvas.getContext("2d", { alpha: false });
-
-ctx.fillStyle = "#080e05";
-ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-/*********************************************************
- *  Graphics
- **********************************************************/
-
-function drawScreen(screenPtr) {
-  const screen = new Uint8ClampedArray(
-    memory.buffer,
-    screenPtr,
-    WIDTH * HEIGHT * CHANNELS
-  );
-  const image = new ImageData(screen, WIDTH, HEIGHT);
-
-  ctx.putImageData(image, 0, 0, 0, 0, WIDTH, HEIGHT);
-  // ctx.drawImage(image, 0, 0, WIDTH * 2, HEIGHT * 2);
-}
-
-/*********************************************************
- *  Emulation
- ***********************************************************/
-
-let keydownHandler;
-let keyupHandler;
-
-function emulate(romData) {
-  const gb = Emulator.new(romData);
-
-  keydownHandler = window.addEventListener("keydown", (event) => {
-    switch (event.keyCode) {
-      case 39: {
-        gb.keydown(0);
-        break;
-      }
-      case 37: {
-        gb.keydown(1);
-        break;
-      }
-      case 38: {
-        gb.keydown(2);
-        break;
-      }
-      case 40: {
-        gb.keydown(3);
-        break;
-      }
-      case 65: {
-        gb.keydown(4);
-        break;
-      }
-      case 83: {
-        gb.keydown(5);
-        break;
-      }
-      case 32: {
-        gb.keydown(6);
-        break;
-      }
-      case 13: {
-        gb.keydown(7);
-        break;
-      }
-    }
-  });
-
-  keyupHandler = window.addEventListener("keyup", (event) => {
-    switch (event.keyCode) {
-      case 39: {
-        gb.keyup(0);
-        break;
-      }
-      case 37: {
-        gb.keyup(1);
-        break;
-      }
-      case 38: {
-        gb.keyup(2);
-        break;
-      }
-      case 40: {
-        gb.keyup(3);
-        break;
-      }
-      case 65: {
-        gb.keyup(4);
-        break;
-      }
-      case 83: {
-        gb.keyup(5);
-        break;
-      }
-      case 32: {
-        gb.keyup(6);
-        break;
-      }
-      case 13: {
-        gb.keyup(7);
-        break;
-      }
-    }
-  });
-
-  const screenPtr = gb.screen();
-  let start = null;
-
-  let maxTime = 0;
-  let counter = 0;
-
-  function renderLoop(timestamp) {
-    if (!start) start = timestamp;
-    const delta = timestamp - start;
-    // console.log(1000 / delta);
-    // Update emulator
-    const before = performance.now();
-    gb.update();
-    let timeDelta = performance.now() - before;
-    if (counter < 2 || timeDelta > maxTime) {
-      counter++;
-      maxTime = timeDelta;
-      console.log(maxTime);
-    }
-    // Draw Screen
-    drawScreen(screenPtr);
-    start = timestamp;
-    requestAnimationFrame(renderLoop);
-  }
-
-  renderLoop();
-}
+const emulation = new Emulation();
 
 const inputElement = document.getElementById("input");
 inputElement.addEventListener("change", handleFiles, false);
+
 function handleFiles() {
   const romFile = this.files[0];
+
   romFile.arrayBuffer().then((buffer) => {
-    emulate(new Uint8Array(buffer));
+    emulation.start(new Uint8Array(buffer));
   });
 }
+
+// import { Emulator } from "gbemu";
+// import { memory } from "gbemu/gbemu_bg";
+
+// const WIDTH = 160;
+// const HEIGHT = 144;
+// const CHANNELS = 4;
+// const PIXEL_SIZE = 1;
+
+// /*********************************************************
+//  *  Canvas
+//  **********************************************************/
+
+// const canvas = document.getElementById("gbemu-canvas");
+// canvas.width = PIXEL_SIZE * WIDTH;
+// canvas.height = PIXEL_SIZE * HEIGHT;
+// const ctx = canvas.getContext("2d", { alpha: false });
+
+// ctx.fillStyle = "#080e05";
+// ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+// /*********************************************************
+//  *  Graphics
+//  **********************************************************/
+
+// function drawScreen(screenPtr) {
+//   const screen = new Uint8ClampedArray(
+//     memory.buffer,
+//     screenPtr,
+//     WIDTH * HEIGHT * CHANNELS
+//   );
+//   const image = new ImageData(screen, WIDTH, HEIGHT);
+
+//   ctx.putImageData(image, 0, 0, 0, 0, WIDTH, HEIGHT);
+//   // ctx.drawImage(image, 0, 0, WIDTH * 2, HEIGHT * 2);
+// }
+
+// /*********************************************************
+//  *  Emulation
+//  ***********************************************************/
+
+// function emulate(romData) {
+//   const gb = Emulator.new(romData);
+
+//   window.addEventListener("keydown", (event) => {
+//     switch (event.keyCode) {
+//       case 39: {
+//         gb.keydown(0);
+//         break;
+//       }
+//       case 37: {
+//         gb.keydown(1);
+//         break;
+//       }
+//       case 38: {
+//         gb.keydown(2);
+//         break;
+//       }
+//       case 40: {
+//         gb.keydown(3);
+//         break;
+//       }
+//       case 65: {
+//         gb.keydown(4);
+//         break;
+//       }
+//       case 83: {
+//         gb.keydown(5);
+//         break;
+//       }
+//       case 32: {
+//         gb.keydown(6);
+//         break;
+//       }
+//       case 13: {
+//         gb.keydown(7);
+//         break;
+//       }
+//     }
+//   });
+
+//   window.addEventListener("keyup", (event) => {
+//     switch (event.keyCode) {
+//       case 39: {
+//         gb.keyup(0);
+//         break;
+//       }
+//       case 37: {
+//         gb.keyup(1);
+//         break;
+//       }
+//       case 38: {
+//         gb.keyup(2);
+//         break;
+//       }
+//       case 40: {
+//         gb.keyup(3);
+//         break;
+//       }
+//       case 65: {
+//         gb.keyup(4);
+//         break;
+//       }
+//       case 83: {
+//         gb.keyup(5);
+//         break;
+//       }
+//       case 32: {
+//         gb.keyup(6);
+//         break;
+//       }
+//       case 13: {
+//         gb.keyup(7);
+//         break;
+//       }
+//     }
+//   });
+
+//   const screenPtr = gb.screen();
+//   let start = null;
+
+//   let maxTime = 0;
+//   let counter = 0;
+
+//   function renderLoop(timestamp) {
+//     if (!start) start = timestamp;
+//     const delta = timestamp - start;
+//     // console.log(1000 / delta);
+//     // Update emulator
+//     const before = performance.now();
+//     gb.update();
+//     let timeDelta = performance.now() - before;
+//     if (counter < 2 || timeDelta > maxTime) {
+//       counter++;
+//       maxTime = timeDelta;
+//       console.log(maxTime);
+//     }
+//     // Draw Screen
+//     drawScreen(screenPtr);
+//     start = timestamp;
+//     requestAnimationFrame(renderLoop);
+//   }
+
+//   renderLoop();
+// }
+
+// const inputElement = document.getElementById("input");
+
+// inputElement.addEventListener("change", handleFiles, false);
+
+// function handleFiles() {
+//   const romFile = this.files[0];
+
+//   romFile.arrayBuffer().then((buffer) => {
+//     emulate(new Uint8Array(buffer));
+//   });
+// }

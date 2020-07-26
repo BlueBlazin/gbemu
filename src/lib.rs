@@ -2,6 +2,7 @@ mod apu;
 mod cartridge;
 pub mod cpu;
 pub mod emulator;
+mod events;
 mod gpu;
 mod joypad;
 mod memory;

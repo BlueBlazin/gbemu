@@ -1,5 +1,6 @@
 pub mod opcodes;
 
+use crate::events::Event;
 use crate::joypad::Key;
 use crate::memory::mmu::{HdmaType, Mmu};
 
@@ -92,6 +93,8 @@ pub struct Cpu {
     halt_bug: bool,
     ime_set_pending: bool,
     just_halted: bool,
+
+    event_cycles: usize,
 }
 
 impl Cpu {
@@ -115,6 +118,7 @@ impl Cpu {
             halt_bug: false,
             ime_set_pending: false,
             just_halted: false,
+            event_cycles: 0,
         }
     }
 
@@ -148,6 +152,20 @@ impl Cpu {
 
     pub fn screen(&self) -> *const u8 {
         self.mmu.screen()
+    }
+
+    pub fn run_till_event(&mut self) -> Event {
+        while self.event_cycles < MAX_CYCLES {
+            self.event_cycles += self.tick();
+
+            if self.mmu.gpu.vblank_event {
+                self.mmu.gpu.vblank_event = false;
+                return Event::VBlank;
+            }
+        }
+
+        self.event_cycles = 0;
+        Event::MaxCycles
     }
 
     pub fn frame(&mut self) {

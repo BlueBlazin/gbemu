@@ -33,6 +33,11 @@ impl Emulator {
         }
     }
 
+    pub fn run_till_event(&mut self) -> f64 {
+        let event = self.cpu.run_till_event();
+        f64::from(event)
+    }
+
     pub fn update(&mut self) {
         loop {
             self.cpu.frame();
