@@ -814,17 +814,6 @@ impl Gpu {
                     self.fetcher.win_tile_x = (self.fetcher.win_tile_x + 1) % 32;
                 }
 
-                if self.position.ly == 56 {
-                    println!(
-                        "lx: {}, current_tile: {}, low: {:#10b}, high: {:#10b}, palette: {}",
-                        self.lx,
-                        self.fetcher.current_tile,
-                        self.fetcher.low,
-                        self.fetcher.high,
-                        self.fetcher.current_tile_attr & 0x7,
-                    );
-                }
-
                 self.fetcher.advance_state();
 
                 if self.bg_fifo.is_empty() {

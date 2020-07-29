@@ -7,14 +7,10 @@
   width: 100vw;
   height: 100vh;
   /* background-color: #202129; */
-  background-color: #292b35;
+  /* background-color: #292b35; */
+  background-color: #e3e4e7;
   /* background: rgb(108, 160, 204); */
-  background: radial-gradient(
-    circle,
-    rgb(63, 70, 90) 0%,
-    rgb(33, 43, 68) 35%,
-    rgb(36, 39, 43) 100%
-  );
+  /* background: radial-gradient(circle, rgb(63, 70, 90) 0%, rgb(33, 43, 68) 35%, rgb(36, 39, 43) 100%); */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -24,9 +20,11 @@
 .header {
   width: 100vw;
   height: 60px;
-  background-color: rgb(13, 20, 39);
+  /* background-color: rgb(13, 20, 39); */
+  background-color: rgb(161, 159, 155);
   /* color: rgb(95, 178, 247); */
-  color: rgb(44, 149, 248);
+  /* color: rgb(44, 149, 248); */
+  color: rgb(13, 26, 39);
 
   font-family: cursive;
   font-size: 28px;
@@ -35,18 +33,15 @@
 
   box-sizing: border-box;
   padding-left: 50px;
-  transition: color 0.25s;
-}
-
-.header:hover {
-  color: rgb(217, 230, 255);
 }
 
 .rom-upload {
-  height: 50px;
+  height: 55px;
   display: flex;
   align-items: center;
   color: #ddd;
+  background-color: rgb(14, 14, 14);
+  border-radius: 4px;
 }
 
 .file {
@@ -66,8 +61,8 @@
 
 .border {
   width: 553px;
-  height: 486px;
-  background: url(./border.png);
+  height: 485px;
+  background: url(./border2.png);
   background-size: cover;
   background-repeat: no-repeat;
   background-position: center;

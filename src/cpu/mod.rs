@@ -155,7 +155,12 @@ impl Cpu {
     }
 
     pub fn run_till_event(&mut self) -> Event {
-        while self.event_cycles < MAX_CYCLES {
+        let max_cycles = match self.mmu.cgb_mode.speed {
+            CgbSpeed::Normal => MAX_CYCLES,
+            CgbSpeed::Double => MAX_CYCLES * 2,
+        };
+
+        while self.event_cycles < max_cycles {
             if self.mmu.gpu.vblank_event {
                 self.mmu.gpu.vblank_event = false;
                 return Event::VBlank;
@@ -164,7 +169,7 @@ impl Cpu {
             self.event_cycles += self.tick();
         }
 
-        self.event_cycles -= MAX_CYCLES;
+        self.event_cycles -= max_cycles;
         Event::MaxCycles
     }
 
@@ -268,7 +273,7 @@ impl Cpu {
     }
 
     fn gdma_tick(&mut self) {
-        self.cycles += 4;
+        // self.cycles += 4;
         let cycles = self.mmu.gdma_tick();
         self.add_cycles(cycles);
     }
@@ -276,7 +281,8 @@ impl Cpu {
     fn hdma_tick(&mut self) {
         if self.mmu.hdma.new_hdma {
             self.mmu.hdma.new_hdma = false;
-            self.cycles += 4;
+            // self.cycles += 4;
+            self.add_cycles(4);
         }
         let cycles = self.mmu.hdma_tick();
         self.add_cycles(cycles);
@@ -1472,9 +1478,11 @@ mod tests {
         // let rom = fs::read("roms/instr_timing.gb").unwrap();
         // let rom = fs::read("roms/acceptance/ei_timing.gb").unwrap();
         // let rom = fs::read("roms/interrupt_time.gb").unwrap();
+        let rom = fs::read("roms/Shantae (USA).gbc").unwrap();
         // let rom = fs::read("roms/Aladdin (USA).gbc").unwrap();
         // let rom = fs::read("roms/dmg-acid2.gb").unwrap();
-        let rom = fs::read("roms/cgb-acid2.gbc").unwrap();
+        // let rom = fs::read("roms/cgb-acid2.gbc").unwrap();
+        // let rom = fs::read("roms/Pokemon Pinball (U) (C).gbc").unwrap();
         // let rom = fs::read("roms/Tetris.gb").unwrap();
         // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
         // let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();

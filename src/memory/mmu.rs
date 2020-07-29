@@ -417,9 +417,13 @@ impl Mmu {
                 }
                 0xFF55 if self.emu_mode == EmulationMode::Cgb => {
                     self.hdma.hdma_type = match value & 0x80 {
-                        0x00 => HdmaType::GPDma,
+                        0x00 => {
+                            println!("GP DMA requested.");
+                            HdmaType::GPDma
+                        }
                         _ => {
                             self.hdma.new_hdma = true;
+                            println!("HBlank DMA requested.");
                             HdmaType::HBlankDma
                         }
                     };
