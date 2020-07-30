@@ -768,13 +768,6 @@ impl Gpu {
                     self.fetcher.current_tile_attr = self.get_vram_byte(addr, 1);
                 }
 
-                // if self.position.ly == 56 {
-                //     println!(
-                //         "lx: {}, current_tile: {}, addr: {:#X}, attr: {:#X}",
-                //         self.lx, self.fetcher.current_tile, addr, self.fetcher.current_tile_attr,
-                //     );
-                // }
-
                 self.fetcher.advance_state();
             }
             FetcherState::ReadTileLow => {
@@ -785,13 +778,6 @@ impl Gpu {
                 };
 
                 let addr = self.tiledata_addr(self.lcdc.tiledata_sel, self.fetcher.current_tile);
-
-                // if self.position.ly == 56 {
-                //     println!(
-                //         "lx: {}, current_tile: {}, addr: {:#X}",
-                //         self.lx, self.fetcher.current_tile, addr,
-                //     );
-                // }
 
                 let bank = ((self.fetcher.current_tile_attr >> 3) & 0x1) as usize;
                 self.fetcher.low = self.get_vram_byte(addr + row as u16 * 2, bank);

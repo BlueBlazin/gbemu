@@ -40,6 +40,7 @@ impl Default for OamDma {
     }
 }
 
+#[derive(PartialEq)]
 pub enum HdmaType {
     NoHdma,
     HBlankDma,
