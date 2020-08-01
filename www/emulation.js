@@ -10,6 +10,11 @@ const EVENT_AUDIO_BUFFER_FULL = 1;
 const EVENT_MAX_CYCLES = 2;
 const PIXEL_SIZE = 1;
 
+// const AUDIO_BUFFER_SIZE = 736;
+const AUDIO_BUFFER_SIZE = 2048;
+const AUDIO_SAMPLE_RATE = 44100.0;
+const SAMPLE_DURATION = AUDIO_BUFFER_SIZE / AUDIO_SAMPLE_RATE;
+
 /*********************************************************
  *  Canvas
  **********************************************************/
@@ -19,10 +24,14 @@ canvas.width = PIXEL_SIZE * WIDTH;
 canvas.height = PIXEL_SIZE * HEIGHT;
 const ctx = canvas.getContext("2d", { alpha: false });
 
-// ctx.fillStyle = "#aaaabb";
-// ctx.fillStyle = "#a4b2bf";
 ctx.fillStyle = "#6a737b";
 ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+/*********************************************************
+ *  Audio
+ **********************************************************/
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 /*********************************************************
  *  Emulation
@@ -32,17 +41,29 @@ export class Emulation {
   start(romData) {
     this.gb = Emulator.new(romData);
     this.screenPtr = this.gb.screen();
+    this.audioLeftPtr = this.gb.audio_buffer_left();
+    this.audioRightPtr = this.gb.audio_buffer_right();
 
     this.registerKeydownHandler();
     this.registerKeyupHandler();
 
+    this.lastCallTime = null;
+
     this.emulationDriver();
   }
 
-  emulationDriver() {
+  emulationDriver(time) {
     requestAnimationFrame(this.emulationDriver.bind(this));
+    // setTimeout(this.emulationDriver.bind(this), 1000 / 60);
 
+    const diff = time - this.lastCallTime;
+    this.lastCallTime = time;
+
+    const timeDelta = diff - 1000 / 60;
+
+    let before = performance.now();
     this.runTill();
+    console.log(performance.now() - before);
   }
 
   runTill() {
@@ -53,9 +74,13 @@ export class Emulation {
 
       if (event == EVENT_VBLANK) {
         this.drawScreen();
-      } else if (event == EVENT_AUDIO_BUFFER_FULL) {
-        // play audio
-      } else if (event == EVENT_MAX_CYCLES) {
+      }
+
+      if (event == EVENT_AUDIO_BUFFER_FULL) {
+        this.playAudio();
+      }
+
+      if (event == EVENT_MAX_CYCLES) {
         break;
       }
     }
@@ -70,6 +95,39 @@ export class Emulation {
 
     const image = new ImageData(screen, WIDTH, HEIGHT);
     ctx.putImageData(image, 0, 0, 0, 0, WIDTH, HEIGHT);
+  }
+
+  playAudio() {
+    const leftBuffer = new Float32Array(
+      memory.buffer,
+      this.audioLeftPtr,
+      AUDIO_BUFFER_SIZE
+    );
+
+    const rightBuffer = new Float32Array(
+      memory.buffer,
+      this.audioRightPtr,
+      AUDIO_BUFFER_SIZE
+    );
+
+    const audioArrayBuffer = audioCtx.createBuffer(
+      2,
+      AUDIO_BUFFER_SIZE,
+      AUDIO_SAMPLE_RATE
+    );
+
+    audioArrayBuffer.copyToChannel(leftBuffer, 0);
+    audioArrayBuffer.copyToChannel(rightBuffer, 1);
+
+    const audioSource = audioCtx.createBufferSource();
+    audioSource.buffer = audioArrayBuffer;
+
+    let startTime = this.nextStartTime || audioCtx.currentTime;
+
+    audioSource.connect(audioCtx.destination);
+    audioSource.start(startTime);
+
+    this.nextStartTime = startTime + SAMPLE_DURATION;
   }
 
   registerKeydownHandler() {

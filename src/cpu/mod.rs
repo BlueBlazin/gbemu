@@ -166,7 +166,9 @@ impl Cpu {
                 return Event::VBlank;
             }
 
-            if let (Some(left), Some(right)) = self.mmu.apu.get_next_buffer() {}
+            if let (Some(left), Some(right)) = self.mmu.apu.get_next_buffer() {
+                return Event::AudioBufferFull(left, right);
+            }
 
             self.event_cycles += self.tick();
         }

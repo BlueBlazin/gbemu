@@ -1,5 +1,7 @@
 use crate::apu::queue::BUFFER_SIZE;
 use crate::cpu::Cpu;
+use crate::events::Event;
+use std::mem;
 use wasm_bindgen::prelude::*;
 use web_sys::AudioContext;
 
@@ -14,6 +16,8 @@ pub struct Emulator {
     cpu: Cpu,
     ctx: AudioContext,
     next_start_time: Option<f64>,
+    left_audio: Vec<f32>,
+    right_audio: Vec<f32>,
 }
 
 #[wasm_bindgen]
@@ -30,12 +34,30 @@ impl Emulator {
             cpu,
             ctx,
             next_start_time: None,
+            left_audio: vec![0.0; BUFFER_SIZE],
+            right_audio: vec![0.0; BUFFER_SIZE],
         }
     }
 
     pub fn run_till_event(&mut self) -> f64 {
-        let event = self.cpu.run_till_event();
-        f64::from(event)
+        match self.cpu.run_till_event() {
+            Event::VBlank => 0.0,
+            Event::AudioBufferFull(left, right) => {
+                mem::replace(&mut self.left_audio, left);
+                mem::replace(&mut self.right_audio, right);
+
+                1.0
+            }
+            Event::MaxCycles => 2.0,
+        }
+    }
+
+    pub fn audio_buffer_left(&self) -> *const f32 {
+        self.left_audio.as_ptr()
+    }
+
+    pub fn audio_buffer_right(&self) -> *const f32 {
+        self.right_audio.as_ptr()
     }
 
     pub fn update(&mut self) {
