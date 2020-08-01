@@ -11,9 +11,11 @@ const EVENT_MAX_CYCLES = 2;
 const PIXEL_SIZE = 1;
 
 // const AUDIO_BUFFER_SIZE = 736;
-const AUDIO_BUFFER_SIZE = 2048;
+const AUDIO_BUFFER_SIZE = 4096;
 const AUDIO_SAMPLE_RATE = 44100.0;
 const SAMPLE_DURATION = AUDIO_BUFFER_SIZE / AUDIO_SAMPLE_RATE;
+
+const MAX_CYCLES = 69905;
 
 /*********************************************************
  *  Canvas
@@ -41,6 +43,12 @@ export class Emulation {
   start(romData) {
     this.gb = Emulator.new(romData);
     this.screenPtr = this.gb.screen();
+    this.screen = new Uint8ClampedArray(
+      memory.buffer,
+      this.screenPtr,
+      WIDTH * HEIGHT * CHANNELS
+    );
+
     this.audioLeftPtr = this.gb.audio_buffer_left();
     this.audioRightPtr = this.gb.audio_buffer_right();
 
@@ -52,32 +60,31 @@ export class Emulation {
     this.emulationDriver();
   }
 
-  emulationDriver(time) {
-    requestAnimationFrame(this.emulationDriver.bind(this));
-    // setTimeout(this.emulationDriver.bind(this), 1000 / 60);
+  emulationDriver() {
+    const timeMs = performance.now();
+    setTimeout(this.emulationDriver.bind(this), 1000 / 60);
 
-    const diff = time - this.lastCallTime;
+    const time = timeMs / 1000;
+    const diff = Math.max(time - (this.lastCallTime || time), 0);
     this.lastCallTime = time;
 
-    const timeDelta = diff - 1000 / 60;
+    const maxCycles = Math.floor(MAX_CYCLES * (1.0 + diff));
 
-    let before = performance.now();
-    this.runTill();
-    console.log(performance.now() - before);
+    this.runTill(maxCycles);
   }
 
-  runTill() {
+  runTill(maxCycles) {
     let event;
 
     while (true) {
-      event = this.gb.run_till_event();
+      event = this.gb.run_till_event(maxCycles);
 
       if (event == EVENT_VBLANK) {
         this.drawScreen();
       }
 
       if (event == EVENT_AUDIO_BUFFER_FULL) {
-        this.playAudio();
+        // this.playAudio();
       }
 
       if (event == EVENT_MAX_CYCLES) {
@@ -87,13 +94,14 @@ export class Emulation {
   }
 
   drawScreen() {
-    const screen = new Uint8ClampedArray(
-      memory.buffer,
-      this.screenPtr,
-      WIDTH * HEIGHT * CHANNELS
-    );
+    // const screen = new Uint8ClampedArray(
+    //   memory.buffer,
+    //   this.screenPtr,
+    //   WIDTH * HEIGHT * CHANNELS
+    // );
 
-    const image = new ImageData(screen, WIDTH, HEIGHT);
+    // const image = new ImageData(screen, WIDTH, HEIGHT);
+    const image = new ImageData(this.screen, WIDTH, HEIGHT);
     ctx.putImageData(image, 0, 0, 0, 0, WIDTH, HEIGHT);
   }
 

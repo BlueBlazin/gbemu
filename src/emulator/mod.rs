@@ -39,13 +39,15 @@ impl Emulator {
         }
     }
 
-    pub fn run_till_event(&mut self) -> f64 {
-        match self.cpu.run_till_event() {
+    pub fn run_till_event(&mut self, max_cycles: usize) -> f64 {
+        match self.cpu.run_till_event(max_cycles) {
             Event::VBlank => 0.0,
             Event::AudioBufferFull(left, right) => {
-                mem::replace(&mut self.left_audio, left);
-                mem::replace(&mut self.right_audio, right);
+                // mem::replace(&mut self.left_audio, left);
+                // mem::replace(&mut self.right_audio, right);
 
+                // 1.0
+                self.play_audio_sample(left, right);
                 1.0
             }
             Event::MaxCycles => 2.0,

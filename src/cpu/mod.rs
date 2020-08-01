@@ -154,10 +154,10 @@ impl Cpu {
         self.mmu.screen()
     }
 
-    pub fn run_till_event(&mut self) -> Event {
+    pub fn run_till_event(&mut self, max_cycles: usize) -> Event {
         let max_cycles = match self.mmu.cgb_mode.speed {
-            CgbSpeed::Normal => MAX_CYCLES,
-            CgbSpeed::Double => MAX_CYCLES * 2,
+            CgbSpeed::Normal => max_cycles,
+            CgbSpeed::Double => max_cycles * 2,
         };
 
         while self.event_cycles < max_cycles {
