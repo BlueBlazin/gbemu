@@ -166,6 +166,8 @@ impl Cpu {
                 return Event::VBlank;
             }
 
+            if let (Some(left), Some(right)) = self.mmu.apu.get_next_buffer() {}
+
             self.event_cycles += self.tick();
         }
 

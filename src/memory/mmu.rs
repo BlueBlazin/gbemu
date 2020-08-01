@@ -1,7 +1,7 @@
 use crate::apu::Apu;
 use crate::cartridge::Cartridge;
 use crate::cpu::{CgbMode, EmulationMode};
-use crate::gpu::{Gpu, GpuMode};
+use crate::gpu::Gpu;
 use crate::joypad::Joypad;
 use crate::memory::bootrom::Bootrom;
 use crate::memory::wram::Wram;
@@ -235,43 +235,7 @@ impl Mmu {
         self.gpu.screen()
     }
 
-    fn addr_bus(&self, addr: u16) -> AddrBus {
-        if addr < 0x8000 {
-            return AddrBus::Main;
-        }
-
-        if addr < 0xA000 {
-            return AddrBus::Vram;
-        }
-
-        if addr < 0xC000 {
-            return AddrBus::Main;
-        }
-
-        if addr < 0xFE00 {
-            return if self.emu_mode == EmulationMode::Cgb {
-                AddrBus::Ram
-            } else {
-                AddrBus::Main
-            };
-        }
-
-        AddrBus::Internal
-    }
-
-    fn shared_dma_addr(&self, addr: u16) -> bool {
-        if !self.oam_dma.active || !self.gpu.oam_dma_active {
-            return false;
-        }
-
-        self.addr_bus(addr) == self.addr_bus(self.oam_dma.src_addr)
-    }
-
     pub fn get_byte(&mut self, addr: u16) -> u8 {
-        // if self.shared_dma_addr(addr) {
-        //     addr = self.oam_dma.src_addr;
-        // }
-
         match addr {
             // 0000-0100   256 byte Boot ROM
             0x0000..=0x00FF => {
