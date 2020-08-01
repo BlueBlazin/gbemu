@@ -26,23 +26,23 @@ impl From<&[u8]> for Sprite {
     }
 }
 
-#[derive(Debug)]
-pub struct BgAttr {
-    pub bgp_num: usize,
-    pub vram_bank: usize,
-    pub mirror_horizontal: bool,
-    pub mirror_vertical: bool,
-    pub has_priority: bool,
-}
+// #[derive(Debug)]
+// pub struct BgAttr {
+//     pub bgp_num: usize,
+//     pub vram_bank: usize,
+//     pub mirror_horizontal: bool,
+//     pub mirror_vertical: bool,
+//     pub has_priority: bool,
+// }
 
-impl From<u8> for BgAttr {
-    fn from(value: u8) -> Self {
-        Self {
-            bgp_num: (value & 0x07) as usize,
-            vram_bank: if (value & 0x08) == 0 { 0 } else { 1 },
-            mirror_horizontal: (value & 0x20) != 0,
-            mirror_vertical: (value & 0x40) != 0,
-            has_priority: (value & 0x80) != 0,
-        }
-    }
-}
+// impl From<u8> for BgAttr {
+//     fn from(value: u8) -> Self {
+//         Self {
+//             bgp_num: (value & 0x07) as usize,
+//             vram_bank: if (value & 0x08) == 0 { 0 } else { 1 },
+//             mirror_horizontal: (value & 0x20) != 0,
+//             mirror_vertical: (value & 0x40) != 0,
+//             has_priority: (value & 0x80) != 0,
+//         }
+//     }
+// }

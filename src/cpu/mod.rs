@@ -191,9 +191,15 @@ impl Cpu {
             return self.halt_tick();
         }
 
+        // match self.mmu.hdma.hdma_type {
+        //     HdmaType::GPDma => self.gdma_tick(),
+        //     HdmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
+        //     _ => self.cpu_tick(),
+        // }
+
         match self.mmu.hdma.hdma_type {
             HdmaType::GPDma => self.gdma_tick(),
-            HdmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
+            HdmaType::HBlankDma if self.mmu.gpu.hdma_flag => self.hdma_tick(),
             _ => self.cpu_tick(),
         }
 
@@ -272,20 +278,38 @@ impl Cpu {
         self.cycles
     }
 
+    // fn gdma_tick(&mut self) {
+    //     // self.cycles += 4;
+    //     let cycles = self.mmu.gdma_tick();
+    //     self.add_cycles(cycles);
+    // }
+
+    // fn hdma_tick(&mut self) {
+    //     if self.mmu.hdma.new_hdma {
+    //         self.mmu.hdma.new_hdma = false;
+    //         // self.cycles += 4;
+    //         self.add_cycles(4);
+    //     }
+    //     let cycles = self.mmu.hdma_tick();
+    //     self.add_cycles(cycles);
+    // }
+
     fn gdma_tick(&mut self) {
-        // self.cycles += 4;
-        let cycles = self.mmu.gdma_tick();
-        self.add_cycles(cycles);
+        self.mmu.gdma_tick();
+
+        self.add_cycles(match self.mmu.cgb_mode.speed {
+            CgbSpeed::Normal => 32,
+            CgbSpeed::Double => 64,
+        });
     }
 
     fn hdma_tick(&mut self) {
-        if self.mmu.hdma.new_hdma {
-            self.mmu.hdma.new_hdma = false;
-            // self.cycles += 4;
-            self.add_cycles(4);
-        }
-        let cycles = self.mmu.hdma_tick();
-        self.add_cycles(cycles);
+        self.mmu.hdma_tick();
+
+        self.add_cycles(match self.mmu.cgb_mode.speed {
+            CgbSpeed::Normal => 32,
+            CgbSpeed::Double => 64,
+        });
     }
 
     fn service_pending_interrupts(&mut self) {
@@ -1340,7 +1364,7 @@ impl Cpu {
 
         self.mmu.timer_tick(cycles);
 
-        if !self.stopped && self.mmu.oam_dma.active {
+        if !self.stopped && !self.halted && self.mmu.oam_dma.active {
             self.mmu.oam_dma_tick(cycles);
         }
 

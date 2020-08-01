@@ -132,25 +132,58 @@ impl Mmu {
         self.set_byte(0xFFFF, 0);
     }
 
-    pub fn in_hblank(&self) -> bool {
-        self.gpu.mode() == &GpuMode::HBlank
-    }
+    // pub fn in_hblank(&self) -> bool {
+    //     self.gpu.mode() == &GpuMode::HBlank
+    // }
 
-    pub fn gdma_tick(&mut self) -> usize {
-        let blocks = self.hdma.blocks as usize;
-        while self.hdma.blocks > 0 {
-            self.hdma_transfer_block();
-        }
-        self.hdma.hdma_type = HdmaType::NoHdma;
-        blocks * 32
-    }
+    // pub fn gdma_tick(&mut self) -> usize {
+    //     let blocks = self.hdma.blocks as usize;
+    //     while self.hdma.blocks > 0 {
+    //         self.hdma_transfer_block();
+    //     }
+    //     self.hdma.hdma_type = HdmaType::NoHdma;
+    //     blocks * 32
+    // }
 
-    pub fn hdma_tick(&mut self) -> usize {
+    // pub fn hdma_tick(&mut self) -> usize {
+    //     self.hdma_transfer_block();
+    //     if self.hdma.blocks == 0 {
+    //         self.hdma.hdma_type = HdmaType::NoHdma;
+    //     }
+    //     32
+    // }
+
+    pub fn gdma_tick(&mut self) {
         self.hdma_transfer_block();
+
         if self.hdma.blocks == 0 {
             self.hdma.hdma_type = HdmaType::NoHdma;
         }
-        32
+    }
+
+    pub fn hdma_tick(&mut self) {
+        self.hdma_transfer_block();
+
+        if self.hdma.blocks == 0 {
+            self.hdma.hdma_type = HdmaType::NoHdma;
+        }
+
+        self.gpu.hdma_flag = false;
+    }
+
+    fn hdma_transfer_block(&mut self) {
+        if self.hdma.blocks == 0 {
+            return;
+        }
+
+        for _ in 0..16 {
+            let value = self.get_byte(self.hdma.src);
+            self.set_byte(0x8000 | (self.hdma.dst & 0x1FFF), value);
+            self.hdma.src += 1;
+            self.hdma.dst += 1;
+        }
+
+        self.hdma.blocks -= 1;
     }
 
     pub fn oam_dma_tick(&mut self, cycles: usize) {
@@ -184,21 +217,6 @@ impl Mmu {
             self.oam_dma.i += 1;
             self.oam_dma.src_addr += 1;
         }
-    }
-
-    fn hdma_transfer_block(&mut self) {
-        if self.hdma.blocks == 0 {
-            return;
-        }
-
-        for _ in 0..16 {
-            let value = self.get_byte(self.hdma.src);
-            self.set_byte(0x8000 | (self.hdma.dst & 0x1FFF), value);
-            self.hdma.src += 1;
-            self.hdma.dst += 1;
-        }
-
-        self.hdma.blocks -= 1;
     }
 
     pub fn apu_tick(&mut self, cycles: usize) {
@@ -418,13 +436,9 @@ impl Mmu {
                 }
                 0xFF55 if self.emu_mode == EmulationMode::Cgb => {
                     self.hdma.hdma_type = match value & 0x80 {
-                        0x00 => {
-                            println!("GP DMA requested.");
-                            HdmaType::GPDma
-                        }
+                        0x00 => HdmaType::GPDma,
                         _ => {
                             self.hdma.new_hdma = true;
-                            println!("HBlank DMA requested.");
                             HdmaType::HBlankDma
                         }
                     };

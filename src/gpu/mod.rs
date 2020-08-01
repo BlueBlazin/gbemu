@@ -141,7 +141,7 @@ impl ObjFifo {
 
             let old_item = &self.q[i];
 
-            if value != 0 && (old_item.value == 0 || obj_to_bg_prio < old_item.obj_to_obj_prio) {
+            if value != 0 && (old_item.value == 0 || obj_to_obj_prio < old_item.obj_to_obj_prio) {
                 self.q[i] = PixelFifoItem {
                     value,
                     palette_num,
@@ -273,7 +273,7 @@ pub struct Gpu {
     wx_triggered: bool,
     comparators: Vec<i16>,
     locations: Vec<usize>,
-    sprites: Vec<Sprite>,
+    // sprites: Vec<Sprite>,
     search_idx: usize,
 
     sprite_i: usize,
@@ -293,6 +293,7 @@ pub struct Gpu {
     line0_clocks: usize,
 
     pub vblank_event: bool,
+    pub hdma_flag: bool,
 }
 
 impl Gpu {
@@ -330,7 +331,7 @@ impl Gpu {
 
             comparators: Vec::with_capacity(10),
             locations: Vec::with_capacity(10),
-            sprites: Vec::with_capacity(40),
+            // sprites: Vec::with_capacity(40),
             search_idx: 0,
 
             sprite_i: 0,
@@ -350,6 +351,7 @@ impl Gpu {
             line0_clocks: 0,
 
             vblank_event: false,
+            hdma_flag: false,
         }
     }
 
@@ -426,17 +428,19 @@ impl Gpu {
                 continue;
             }
 
-            let sprite = Sprite::from(&self.oam[self.search_idx * 4..(self.search_idx + 1) * 4]);
+            // let sprite = Sprite::from(&self.oam[self.search_idx * 4..(self.search_idx + 1) * 4]);
 
-            self.sprites.push(sprite);
+            // self.sprites.push(sprite);
 
             if self.comparators.len() < 10 {
-                let sprite = &self.sprites[self.search_idx];
+                let sprite =
+                    Sprite::from(&self.oam[self.search_idx * 4..(self.search_idx + 1) * 4]);
+                // let sprite = &self.sprites[self.search_idx];
                 let y = self.position.ly + 16;
                 let height = if self.lcdc.obj_size == 0 { 8 } else { 16 };
 
                 if (y >= sprite.y) && (y < (sprite.y + height)) {
-                    self.insert_sprite();
+                    self.insert_sprite(sprite);
                 }
             }
 
@@ -451,8 +455,8 @@ impl Gpu {
         0
     }
 
-    fn insert_sprite(&mut self) {
-        let sprite = &self.sprites[self.search_idx];
+    fn insert_sprite(&mut self, sprite: Sprite) {
+        // let sprite = &self.sprites[self.search_idx];
 
         let x = sprite.x as i16 - 8;
         let mut i = 0;
@@ -535,10 +539,11 @@ impl Gpu {
             self.sprite_i += 1;
         }
 
-        if !self.cancel_sprite_fetch && self.in_sprite_fetch
-            || ((self.sprite_i < self.comparators.len())
-                && (self.lcdc.obj_enabled() || self.emu_mode == EmulationMode::Cgb)
-                && (self.comparators[self.sprite_i] == self.lx))
+        if !self.cancel_sprite_fetch
+            && (self.in_sprite_fetch
+                || (self.sprite_i < self.comparators.len())
+                    && (self.lcdc.obj_enabled() || self.emu_mode == EmulationMode::Cgb)
+                    && (self.comparators[self.sprite_i] == self.lx))
         {
             self.sprite_fetch_tick();
             return;
@@ -592,8 +597,8 @@ impl Gpu {
             }
             SpriteFetchState::SpriteOverlay => {
                 let i = self.locations[self.sprite_i];
-                // let sprite = Sprite::from(&self.oam[i * 4..(i + 1) * 4]);
-                let sprite = &self.sprites[i];
+                let sprite = Sprite::from(&self.oam[i * 4..(i + 1) * 4]);
+                // let sprite = &self.sprites[i];
 
                 let height16 = self.lcdc.obj_size != 0;
 
@@ -673,11 +678,22 @@ impl Gpu {
     fn fifo_tick(&mut self) {
         if let Some(px) = self.bg_fifo.pop() {
             let mut draw_sprite = false;
-            // let mut bg_enabled = true;
+            let mut bg_over_sprite = px.bg_to_oam_prio;
 
             let spx = match self.obj_fifo.pop() {
                 Some(spx) => {
-                    draw_sprite = spx.value != 0 && self.lcdc.obj_enabled();
+                    if spx.value > 0 && self.lcdc.obj_display_enable != 0 {
+                        draw_sprite = true;
+                        bg_over_sprite |= spx.obj_to_bg_prio;
+                    }
+
+                    // if draw_sprite {
+                    //     println!(
+                    //         "bg_to_oam: {:08b}, obj_to_bg: {:08b}, lcdc0: {:08b}, lx: {}, bg_over_sprite: {:08b}",
+                    //         bg_over_sprite, spx.obj_to_bg_prio, self.lcdc.lcdc0, self.lx, bg_over_sprite,
+                    //     );
+                    // }
+
                     spx
                 }
                 None => PixelFifoItem::default(),
@@ -688,30 +704,33 @@ impl Gpu {
                 return;
             }
 
-            // let mut value = if self.lcdc.lcdc0 != 0 { px.value } else { 0 };
             let mut value = px.value;
 
-            let mut palette = match self.emu_mode {
-                EmulationMode::Dmg => self.dmgp.bgp as u16,
-                EmulationMode::Cgb => {
-                    let palette_idx = px.palette_num as usize * 8;
-                    let color_idx = palette_idx + value as usize * 2;
-                    (self.bgp_ram[color_idx + 1] as u16) << 8 | self.bgp_ram[color_idx + 0] as u16
-                }
-            };
-
-            if value != 0 && (spx.obj_to_bg_prio | px.bg_to_oam_prio) != 0 {
-                if self.emu_mode == EmulationMode::Cgb {
-                    if self.lcdc.lcdc0 == 1 {
-                        draw_sprite = false;
-                    }
-                } else {
-                    draw_sprite = false;
+            if self.lcdc.lcdc0 == 0 {
+                match self.emu_mode {
+                    EmulationMode::Dmg => value = 0,
+                    EmulationMode::Cgb => bg_over_sprite = 0,
                 }
             }
 
+            if value != 0 && bg_over_sprite != 0 {
+                draw_sprite = false;
+            }
+
+            let mut palette = match self.emu_mode {
+                EmulationMode::Dmg => self.dmgp.bgp as u16,
+                EmulationMode::Cgb => self.cgb_bg_palette(px, value),
+            };
+
             if draw_sprite {
                 value = spx.value;
+
+                // if spx.value > 0 && !draw_sprite {
+                //     println!(
+                //         "bg_to_oam: {:08b}, obj_to_bg: {:08b}, lcdc0: {:08b}, lx: {}, bg_over_sprite: {:08b}, obj_display_enable: {:08b}",
+                //         bg_over_sprite, spx.obj_to_bg_prio, self.lcdc.lcdc0, self.lx, bg_over_sprite, self.lcdc.obj_display_enable,
+                //     );
+                // }
 
                 palette = match self.emu_mode {
                     EmulationMode::Dmg => {
@@ -721,12 +740,7 @@ impl Gpu {
                             self.dmgp.obp1 as u16
                         }
                     }
-                    EmulationMode::Cgb => {
-                        let palette_idx = spx.palette_num as usize * 8;
-                        let color_idx = palette_idx + value as usize * 2;
-                        (self.obp_ram[color_idx + 1] as u16) << 8
-                            | self.obp_ram[color_idx + 0] as u16
-                    }
+                    EmulationMode::Cgb => self.cgb_obj_palette(spx, value),
                 }
             }
 
@@ -735,6 +749,20 @@ impl Gpu {
 
             self.lx += 1;
         }
+    }
+
+    #[inline]
+    fn cgb_bg_palette(&self, px: PixelFifoItem, value: u8) -> u16 {
+        let palette_idx = px.palette_num as usize * 8;
+        let color_idx = palette_idx + value as usize * 2;
+        (self.bgp_ram[color_idx + 1] as u16) << 8 | self.bgp_ram[color_idx + 0] as u16
+    }
+
+    #[inline]
+    fn cgb_obj_palette(&self, spx: PixelFifoItem, value: u8) -> u16 {
+        let palette_idx = spx.palette_num as usize * 8;
+        let color_idx = palette_idx + value as usize * 2;
+        (self.obp_ram[color_idx + 1] as u16) << 8 | self.obp_ram[color_idx + 0] as u16
     }
 
     fn fetcher_tick(&mut self) {
@@ -908,7 +936,10 @@ impl Gpu {
             let cycles_left = self.clock + cycles - 456;
             self.clock = 0;
             self.position.ly += 1;
-            self.update_stat_int_signal();
+
+            if self.position.ly > 1 {
+                self.update_stat_int_signal();
+            }
 
             // STRANGE BEHAVIOR
             if self.position.ly == 153 {
@@ -939,12 +970,15 @@ impl Gpu {
         }
 
         match self.stat.mode {
+            GpuMode::HBlank => {
+                self.hdma_flag = true;
+            }
             GpuMode::VBlank => {
                 self.request_vblank_interrupt();
                 // self.update_stat_int_signal();
             }
             GpuMode::OamSearch => {
-                self.sprites.clear();
+                // self.sprites.clear();
                 self.comparators.clear();
                 self.locations.clear();
                 self.search_idx = 0;
@@ -1069,65 +1103,13 @@ impl Gpu {
 
                 // on -> off
                 if old_display_enable != 0 && self.lcdc.display_enable == 0 {
-                    self.stat.mode = GpuMode::HBlank;
-
-                    self.position.ly = 0;
-
-                    self.wx_triggered = false;
-                    self.win_counter = -1;
-
-                    self.clear_screen();
+                    self.turn_display_off();
                 }
-
-                // 0ff -> on
-                // if old_display_enable == 0 && self.lcdc.display_enable != 0 {
-                //     self.clock = 0;
-                //     self.lcd_on_first_line = true;
-
-                //     // pseudo lyc = 0 comparison
-                //     let lyc = self.position.lyc;
-                //     self.stat.mode = GpuMode::InitPixelTransfer;
-                //     self.position.lyc = 0;
-                //     self.update_stat_int_signal();
-                //     self.position.lyc = lyc;
-                //     self.stat.mode = GpuMode::HBlank;
-                // }
+                // off -> on
                 if old_display_enable == 0 && self.lcdc.display_enable != 0 {
-                    self.clock = 0;
-                    self.line0_clocks = 0;
-
-                    self.sprites.clear();
-                    self.comparators.clear();
-                    self.locations.clear();
-                    self.search_idx = 0;
-                    self.mode2_clocks = 0;
-
-                    self.mode3_clocks = 173;
-
-                    // pseudo lyc = 0 comparison
-                    let lyc = self.position.lyc;
-                    self.stat.mode = GpuMode::InitPixelTransfer;
-                    self.position.lyc = 0;
-                    self.update_stat_int_signal();
-                    self.position.lyc = lyc;
-
-                    self.stat.mode = GpuMode::HBlank;
-                    self.first_line0 = true;
+                    self.turn_display_on();
                 }
 
-                // if old_display_enable != 0 && self.lcdc.display_enable == 0 {
-                //     self.next_mode = GpuMode::HBlank;
-                //     self.change_mode(GpuMode::HBlank);
-
-                //     self.position.ly = 0;
-
-                //     self.win_counter = -1;
-                //     self.wx_triggered = false;
-
-                //     self.mode3_clocks = 172;
-
-                //     self.clear_screen();
-                // }
                 self.lcdc.win_tilemap_sel = value & 0x40;
                 self.lcdc.win_display_enable = value & 0x20;
                 self.lcdc.tiledata_sel = value & 0x10;
@@ -1138,7 +1120,14 @@ impl Gpu {
                     self.cancel_sprite_fetch = true;
                 }
 
+                let old_obj_display_enable = self.lcdc.obj_display_enable;
                 self.lcdc.obj_display_enable = value & 0x02;
+                if old_obj_display_enable == 0 && self.lcdc.obj_display_enable != 0 {
+                    println!(
+                        "ly: {}, lx: {}, mode: {:?}",
+                        self.position.ly, self.lx, self.stat.mode
+                    );
+                }
                 self.lcdc.lcdc0 = value & 0x01;
             }
             0xFF41 => {
@@ -1272,5 +1261,40 @@ impl Gpu {
     #[inline]
     fn request_vblank_interrupt(&mut self) {
         self.request_vblank_int = true;
+    }
+
+    #[inline]
+    fn turn_display_off(&mut self) {
+        self.stat.mode = GpuMode::HBlank;
+
+        self.position.ly = 0;
+
+        self.wx_triggered = false;
+        self.win_counter = -1;
+
+        self.clear_screen();
+    }
+
+    #[inline]
+    fn turn_display_on(&mut self) {
+        self.clock = 0;
+        self.line0_clocks = 0;
+
+        self.comparators.clear();
+        self.locations.clear();
+        self.search_idx = 0;
+        self.mode2_clocks = 0;
+
+        self.mode3_clocks = 0;
+
+        let lyc = self.position.lyc;
+        self.stat.mode = GpuMode::InitPixelTransfer;
+        self.position.lyc = 0;
+        self.update_stat_int_signal();
+        self.position.lyc = lyc;
+
+        self.stat.mode = GpuMode::HBlank;
+
+        self.first_line0 = true;
     }
 }
