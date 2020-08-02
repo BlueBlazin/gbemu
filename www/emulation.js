@@ -11,7 +11,7 @@ const EVENT_MAX_CYCLES = 2;
 const PIXEL_SIZE = 1;
 
 // const AUDIO_BUFFER_SIZE = 736;
-const AUDIO_BUFFER_SIZE = 4096;
+const AUDIO_BUFFER_SIZE = 735;
 const AUDIO_SAMPLE_RATE = 44100.0;
 const SAMPLE_DURATION = AUDIO_BUFFER_SIZE / AUDIO_SAMPLE_RATE;
 
@@ -42,15 +42,30 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 export class Emulation {
   start(romData) {
     this.gb = Emulator.new(romData);
-    this.screenPtr = this.gb.screen();
-    this.screen = new Uint8ClampedArray(
-      memory.buffer,
-      this.screenPtr,
-      WIDTH * HEIGHT * CHANNELS
-    );
+    // this.screenPtr = this.gb.screen();
 
-    this.audioLeftPtr = this.gb.audio_buffer_left();
-    this.audioRightPtr = this.gb.audio_buffer_right();
+    // this.screen = new Uint8ClampedArray(
+    //   memory.buffer,
+    //   this.screenPtr,
+    //   WIDTH * HEIGHT * CHANNELS
+    // );
+
+    // this.imageData = ctx.createImageData(WIDTH, HEIGHT);
+
+    // this.audioLeftPtr = this.gb.audio_buffer_left();
+    // this.audioRightPtr = this.gb.audio_buffer_right();
+
+    // this.leftBuffer = new Float32Array(
+    //   memory.buffer,
+    //   this.audioLeftPtr,
+    //   AUDIO_BUFFER_SIZE
+    // );
+
+    // this.rightBuffer = new Float32Array(
+    //   memory.buffer,
+    //   this.audioRightPtr,
+    //   AUDIO_BUFFER_SIZE
+    // );
 
     this.registerKeydownHandler();
     this.registerKeyupHandler();
@@ -71,6 +86,8 @@ export class Emulation {
     const maxCycles = Math.floor(MAX_CYCLES * (1.0 + diff));
 
     this.runTill(maxCycles);
+
+    this.drawScreen();
   }
 
   runTill(maxCycles) {
@@ -80,11 +97,24 @@ export class Emulation {
       event = this.gb.run_till_event(maxCycles);
 
       if (event == EVENT_VBLANK) {
-        this.drawScreen();
+        // this.drawScreen();
+        if (!this.screenPtr) {
+          this.screenPtr = this.gb.screen();
+
+          this.screen = new Uint8ClampedArray(
+            memory.buffer,
+            this.screenPtr,
+            WIDTH * HEIGHT * CHANNELS
+          );
+
+          this.imageData = ctx.createImageData(WIDTH, HEIGHT);
+        }
+
+        this.imageData.data.set(this.screen);
       }
 
       if (event == EVENT_AUDIO_BUFFER_FULL) {
-        // this.playAudio();
+        this.playAudio();
       }
 
       if (event == EVENT_MAX_CYCLES) {
@@ -101,22 +131,42 @@ export class Emulation {
     // );
 
     // const image = new ImageData(screen, WIDTH, HEIGHT);
-    const image = new ImageData(this.screen, WIDTH, HEIGHT);
-    ctx.putImageData(image, 0, 0, 0, 0, WIDTH, HEIGHT);
+
+    // const image = new ImageData(this.screen, WIDTH, HEIGHT);
+    // ctx.putImageData(image, 0, 0, 0, 0, WIDTH, HEIGHT);
+
+    ctx.putImageData(this.imageData, 0, 0, 0, 0, WIDTH, HEIGHT);
   }
 
   playAudio() {
-    const leftBuffer = new Float32Array(
-      memory.buffer,
-      this.audioLeftPtr,
-      AUDIO_BUFFER_SIZE
-    );
+    // const leftBuffer = new Float32Array(
+    //   memory.buffer,
+    //   this.audioLeftPtr,
+    //   AUDIO_BUFFER_SIZE
+    // );
 
-    const rightBuffer = new Float32Array(
-      memory.buffer,
-      this.audioRightPtr,
-      AUDIO_BUFFER_SIZE
-    );
+    // const rightBuffer = new Float32Array(
+    //   memory.buffer,
+    //   this.audioRightPtr,
+    //   AUDIO_BUFFER_SIZE
+    // );
+
+    if (!this.audioLeftPtr) {
+      this.audioLeftPtr = this.gb.audio_buffer_left();
+      this.audioRightPtr = this.gb.audio_buffer_right();
+
+      this.leftBuffer = new Float32Array(
+        memory.buffer,
+        this.audioLeftPtr,
+        AUDIO_BUFFER_SIZE
+      );
+
+      this.rightBuffer = new Float32Array(
+        memory.buffer,
+        this.audioRightPtr,
+        AUDIO_BUFFER_SIZE
+      );
+    }
 
     const audioArrayBuffer = audioCtx.createBuffer(
       2,
@@ -124,15 +174,16 @@ export class Emulation {
       AUDIO_SAMPLE_RATE
     );
 
-    audioArrayBuffer.copyToChannel(leftBuffer, 0);
-    audioArrayBuffer.copyToChannel(rightBuffer, 1);
+    audioArrayBuffer.copyToChannel(this.leftBuffer, 0);
+    audioArrayBuffer.copyToChannel(this.rightBuffer, 1);
 
     const audioSource = audioCtx.createBufferSource();
     audioSource.buffer = audioArrayBuffer;
 
-    let startTime = this.nextStartTime || audioCtx.currentTime;
+    let startTime = this.nextStartTime || audioCtx.currentTime + 0.01;
 
     audioSource.connect(audioCtx.destination);
+
     audioSource.start(startTime);
 
     this.nextStartTime = startTime + SAMPLE_DURATION;

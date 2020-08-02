@@ -2,8 +2,8 @@ use std::collections::VecDeque;
 use std::mem;
 
 // pub const BUFFER_SIZE: usize = 735;
-pub const BUFFER_SIZE: usize = 736;
-// pub const BUFFER_SIZE: usize = 4096;
+// pub const BUFFER_SIZE: usize = 736;
+pub const BUFFER_SIZE: usize = 735;
 
 const GAIN: f32 = 0.5;
 

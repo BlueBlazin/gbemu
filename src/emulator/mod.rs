@@ -1,7 +1,6 @@
 use crate::apu::queue::BUFFER_SIZE;
 use crate::cpu::Cpu;
 use crate::events::Event;
-use std::mem;
 use wasm_bindgen::prelude::*;
 use web_sys::AudioContext;
 
@@ -46,9 +45,14 @@ impl Emulator {
                 // mem::replace(&mut self.left_audio, left);
                 // mem::replace(&mut self.right_audio, right);
 
-                // 1.0
-                self.play_audio_sample(left, right);
+                for i in 0..BUFFER_SIZE {
+                    self.left_audio[i] = left[i];
+                    self.right_audio[i] = right[i];
+                }
+
                 1.0
+                // self.play_audio_sample(left, right);
+                // 1.0
             }
             Event::MaxCycles => 2.0,
         }
@@ -62,15 +66,15 @@ impl Emulator {
         self.right_audio.as_ptr()
     }
 
-    pub fn update(&mut self) {
-        loop {
-            self.cpu.frame();
-            if let (Some(left), Some(right)) = self.cpu.mmu.apu.get_next_buffer() {
-                // self.play_audio_sample(left, right);
-                break;
-            }
-        }
-    }
+    // pub fn update(&mut self) {
+    //     loop {
+    //         self.cpu.frame();
+    //         if let (Some(left), Some(right)) = self.cpu.mmu.apu.get_next_buffer() {
+    //             // self.play_audio_sample(left, right);
+    //             break;
+    //         }
+    //     }
+    // }
 
     fn play_audio_sample(&mut self, mut left: Vec<f32>, mut right: Vec<f32>) {
         let start_time = match self.next_start_time {

@@ -161,6 +161,8 @@ impl Cpu {
         };
 
         while self.event_cycles < max_cycles {
+            self.event_cycles += self.tick();
+
             if self.mmu.gpu.vblank_event {
                 self.mmu.gpu.vblank_event = false;
                 return Event::VBlank;
@@ -169,11 +171,10 @@ impl Cpu {
             if let (Some(left), Some(right)) = self.mmu.apu.get_next_buffer() {
                 return Event::AudioBufferFull(left, right);
             }
-
-            self.event_cycles += self.tick();
         }
 
-        self.event_cycles -= max_cycles;
+        // self.event_cycles -= max_cycles;
+        self.event_cycles = 0;
         Event::MaxCycles
     }
 
