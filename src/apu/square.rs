@@ -210,11 +210,12 @@ impl SquareWave {
 
     pub fn get_byte(&self, addr: u16) -> u8 {
         match addr {
-            0xFF10 | 0xFF15 => 0x80 | self.registers.nrx0,
-            0xFF11 | 0xFF16 => self.registers.nrx1,
+            0xFF10 => 0x80 | self.registers.nrx0,
+            0xFF15 => 0xFF,
+            0xFF11 | 0xFF16 => 0x3F | self.registers.nrx1,
             0xFF12 | 0xFF17 => self.registers.nrx2,
-            0xFF13 | 0xFF18 => self.registers.nrx3,
-            0xFF14 | 0xFF19 => self.registers.nrx4,
+            0xFF13 | 0xFF18 => 0xFF,
+            0xFF14 | 0xFF19 => 0xBF | self.registers.nrx4,
             _ => unreachable!(),
         }
     }
@@ -285,5 +286,9 @@ impl SquareWave {
         if !self.dac_enabled {
             self.enabled = false;
         }
+    }
+
+    pub fn clear_registers(&mut self) {
+        self.registers = AudioRegisters::default();
     }
 }

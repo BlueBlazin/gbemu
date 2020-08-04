@@ -12,6 +12,10 @@ use crate::apu::wave::WaveChannel;
 const SAMPLE_RATE: usize = 95;
 const SEQUENCER_PERIOD: usize = 8192;
 
+const NR50: u16 = 0xFF24;
+const NR51: u16 = 0xFF25;
+const NR52: u16 = 0xFF26;
+
 pub struct AudioRegisters {
     nrx0: u8,
     nrx1: u8,
@@ -164,9 +168,9 @@ impl Apu {
             0xFF16..=0xFF19 => self.channel2.get_byte(addr),
             0xFF1A..=0xFF1E => self.channel3.get_byte(addr),
             0xFF1F..=0xFF23 => self.channel4.get_byte(addr),
-            0xFF24 => self.nr50,
-            0xFF25 => self.nr51,
-            0xFF26 => {
+            NR50 => self.nr50,
+            NR51 => self.nr51,
+            NR52 => {
                 0x70 | (self.master_on as u8) << 7
                     | (self.channel4.enabled as u8) << 3
                     | (self.channel3.enabled as u8) << 2
@@ -180,31 +184,87 @@ impl Apu {
 
     pub fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
-            0xFF10..=0xFF14 => self.channel1.set_byte(addr, value),
-            0xFF15..=0xFF19 => self.channel2.set_byte(addr, value),
-            0xFF1A..=0xFF1E => self.channel3.set_byte(addr, value),
-            0xFF1F..=0xFF23 => self.channel4.set_byte(addr, value),
-            0xFF24 => {
+            0xFF10..=0xFF14 if self.master_on => self.channel1.set_byte(addr, value),
+            0xFF15..=0xFF19 if self.master_on => self.channel2.set_byte(addr, value),
+            0xFF1A..=0xFF1E if self.master_on => self.channel3.set_byte(addr, value),
+            0xFF1F..=0xFF23 if self.master_on => self.channel4.set_byte(addr, value),
+            NR50 if self.master_on => {
                 self.master_vol_left = (((value & 0x70) >> 4) as f32) / 7.0;
                 self.master_vol_right = ((value & 0x07) as f32) / 7.0;
                 self.nr50 = value;
             }
-            0xFF25 => self.nr51 = value,
-            0xFF26 => {
+            NR51 if self.master_on => self.nr51 = value,
+            NR52 => {
                 self.master_on = (value & 0x80) != 0;
                 if !self.master_on {
                     self.channel1.enabled = false;
                     self.channel2.enabled = false;
                     self.channel3.enabled = false;
                     self.channel4.enabled = false;
+                    self.clear_registers();
                 }
             }
             0xFF30..=0xFF3F => self.channel3.set_byte(addr, value),
-            _ => panic!("Unhandled APU register set {:#X}", addr),
+            _ => (),
         }
+    }
+
+    fn clear_registers(&mut self) {
+        self.nr50 = 0x0;
+        self.nr51 = 0x0;
+        self.channel1.clear_registers();
+        self.channel2.clear_registers();
+        self.channel3.clear_registers();
+        self.channel4.clear_registers();
     }
 
     pub fn get_next_buffer(&mut self) -> (Option<Vec<f32>>, Option<Vec<f32>>) {
         self.samples.dequeue()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_registers_with(d: u8) {
+        let mut apu = Apu::new();
+        apu.set_byte(NR50, 0x77);
+
+        let targets = [
+            0x80, 0x3F, 0x00, 0xFF, 0xBF, 0xFF, 0x3F, 0x00, 0xFF, 0xBF, 0x7F, 0xFF, 0x9F, 0xFF,
+            0xBF, 0xFF, 0xFF, 0x00, 0x00, 0xBF, 0x00, 0x00, 0x70,
+        ];
+
+        let mut addr = 0xFF10;
+
+        for target in targets.iter() {
+            if addr == NR52 {
+                continue;
+            }
+            apu.set_byte(addr, d);
+            assert_eq!(
+                apu.get_byte(addr) | *target,
+                *target,
+                "addr: {:#X}, d: {:#X}",
+                addr,
+                d
+            );
+            addr += 1;
+        }
+
+        apu.set_byte(0xFF1A, 0);
+
+        for addr in 0xFF30..=0xFF3F {
+            apu.set_byte(addr, d);
+            assert_eq!(apu.get_byte(addr), d, "addr: {:#X}", addr);
+        }
+    }
+
+    #[test]
+    fn test_registers() {
+        for d in 0..0xFF {
+            test_registers_with(d);
+        }
     }
 }

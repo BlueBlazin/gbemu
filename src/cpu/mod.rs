@@ -95,6 +95,7 @@ pub struct Cpu {
     just_halted: bool,
 
     event_cycles: usize,
+    audio_flag: bool,
 }
 
 impl Cpu {
@@ -119,6 +120,7 @@ impl Cpu {
             ime_set_pending: false,
             just_halted: false,
             event_cycles: 0,
+            audio_flag: true,
         }
     }
 
@@ -173,10 +175,38 @@ impl Cpu {
             }
         }
 
-        // self.event_cycles -= max_cycles;
-        self.event_cycles = 0;
+        self.event_cycles -= max_cycles;
         Event::MaxCycles
     }
+
+    // pub fn run_till_event(&mut self, max_cycles: usize) -> Event {
+    //     let max_cycles = match self.mmu.cgb_mode.speed {
+    //         CgbSpeed::Normal => max_cycles,
+    //         CgbSpeed::Double => max_cycles * 2,
+    //     };
+
+    //     while self.audio_flag {
+    //         self.event_cycles += self.tick();
+
+    //         if self.mmu.gpu.vblank_event {
+    //             self.mmu.gpu.vblank_event = false;
+    //             return Event::VBlank;
+    //         }
+
+    //         if let (Some(left), Some(right)) = self.mmu.apu.get_next_buffer() {
+    //             self.audio_flag = false;
+    //             return Event::AudioBufferFull(left, right);
+    //         }
+    //     }
+
+    //     while self.event_cycles < max_cycles {
+    //         self.event_cycles += self.tick();
+    //     }
+
+    //     self.event_cycles -= max_cycles;
+    //     self.audio_flag = true;
+    //     Event::MaxCycles
+    // }
 
     pub fn frame(&mut self) {
         let mut cycles = 0;

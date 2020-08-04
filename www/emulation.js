@@ -83,7 +83,8 @@ export class Emulation {
     const diff = Math.max(time - (this.lastCallTime || time), 0);
     this.lastCallTime = time;
 
-    const maxCycles = Math.floor(MAX_CYCLES * (1.0 + diff));
+    // const maxCycles = Math.floor(MAX_CYCLES * (1.0 + diff));
+    const maxCycles = Math.floor(MAX_CYCLES);
 
     this.runTill(maxCycles);
 
@@ -114,7 +115,7 @@ export class Emulation {
       }
 
       if (event == EVENT_AUDIO_BUFFER_FULL) {
-        this.playAudio();
+        // this.playAudio();
       }
 
       if (event == EVENT_MAX_CYCLES) {
@@ -150,6 +151,7 @@ export class Emulation {
     //   this.audioRightPtr,
     //   AUDIO_BUFFER_SIZE
     // );
+    const now = audioCtx.currentTime;
 
     if (!this.audioLeftPtr) {
       this.audioLeftPtr = this.gb.audio_buffer_left();
@@ -180,13 +182,17 @@ export class Emulation {
     const audioSource = audioCtx.createBufferSource();
     audioSource.buffer = audioArrayBuffer;
 
-    let startTime = this.nextStartTime || audioCtx.currentTime + 0.01;
+    let startTime = this.nextStartTime || now;
 
-    audioSource.connect(audioCtx.destination);
+    if (startTime >= now) {
+      audioSource.connect(audioCtx.destination);
 
-    audioSource.start(startTime);
+      audioSource.start(startTime);
 
-    this.nextStartTime = startTime + SAMPLE_DURATION;
+      this.nextStartTime = startTime + SAMPLE_DURATION;
+    } else {
+      this.nextStartTime = now + 0.1;
+    }
   }
 
   registerKeydownHandler() {

@@ -277,10 +277,7 @@ impl Mmu {
                 0xFF10..=0xFF1E => self.apu.get_byte(addr),
                 0xFF20..=0xFF26 => self.apu.get_byte(addr),
                 0xFF30..=0xFF3F => self.apu.get_byte(addr),
-                _ => {
-                    println!("Reading from io ports {:#X}", addr);
-                    0xFF
-                }
+                _ => 0xFF,
             },
             0xFF40..=0xFF45 => self.gpu.get_byte(addr),
             0xFF46 => (self.oam_dma.src_addr >> 8) as u8,
@@ -311,10 +308,7 @@ impl Mmu {
                     EmulationMode::Dmg => 0xFF,
                     EmulationMode::Cgb => self.wram.get_byte(addr),
                 },
-                _ => {
-                    println!("Read from io ports {:#X}", addr);
-                    0xFF
-                }
+                _ => 0xFF,
             },
             // FF80-FFFE   High RAM (HRAM)
             0xFF80..=0xFFFE => self.hram[(addr - HRAM_OFFSET) as usize],

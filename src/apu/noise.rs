@@ -22,7 +22,10 @@ impl Noise {
     pub fn new() -> Self {
         Self {
             clock: 0,
-            registers: AudioRegisters::default(),
+            registers: AudioRegisters {
+                nrx1: 0x3F,
+                ..AudioRegisters::default()
+            },
             length_load: 0,
             volume: VolumeEnvelope::default(),
             dac_enabled: false,
@@ -97,11 +100,11 @@ impl Noise {
 
     pub fn get_byte(&mut self, addr: u16) -> u8 {
         match addr {
-            0xFF1F => self.registers.nrx0,
+            0xFF1F => 0xFF,
             0xFF20 => 0xC0 | self.registers.nrx1,
             0xFF21 => self.registers.nrx2,
             0xFF22 => self.registers.nrx3,
-            0xFF23 => 0x3F | self.registers.nrx4,
+            0xFF23 => 0xBF | self.registers.nrx4,
             _ => 0x00,
         }
     }
@@ -150,5 +153,12 @@ impl Noise {
             self.enabled = false;
         }
         self.lfsr = 0xFFFF;
+    }
+
+    pub fn clear_registers(&mut self) {
+        self.registers = AudioRegisters {
+            nrx1: 0x3F,
+            ..AudioRegisters::default()
+        };
     }
 }

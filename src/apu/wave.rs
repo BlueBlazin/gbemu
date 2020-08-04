@@ -24,7 +24,10 @@ impl WaveChannel {
             clock: 0,
             i: 0,
             enabled: false,
-            registers: AudioRegisters::default(),
+            registers: AudioRegisters {
+                nrx1: 0xFF,
+                ..AudioRegisters::default()
+            },
             dac_enabled: false,
             length_load: 0,
             length_counter: 0,
@@ -68,13 +71,17 @@ impl WaveChannel {
         }
     }
 
-    pub fn get_byte(&mut self, addr: u16) -> u8 {
+    pub fn get_byte(&self, addr: u16) -> u8 {
         match addr {
             0xFF1A => 0x7F | self.registers.nrx0,
             0xFF1B => self.registers.nrx1,
             0xFF1C => 0x9F | self.registers.nrx2,
-            0xFF1D => self.registers.nrx3,
-            0xFF1E => self.registers.nrx4,
+            0xFF1D => 0xFF,
+            0xFF1E => 0xBF | self.registers.nrx4,
+            0xFF30..=0xFF3F => {
+                let offset = (addr - 0xFF30) as usize * 2;
+                (self.table[offset] << 4) | self.table[offset + 1]
+            }
             _ => 0x00,
         }
     }
@@ -123,5 +130,12 @@ impl WaveChannel {
         self.i = 0;
         self.clock = 0;
         self.length_counter = self.length_load;
+    }
+
+    pub fn clear_registers(&mut self) {
+        self.registers = AudioRegisters {
+            nrx1: 0xFF,
+            ..AudioRegisters::default()
+        };
     }
 }
