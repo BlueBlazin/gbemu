@@ -230,9 +230,12 @@ impl SquareWave {
                 self.sweep.shift = (value & 0x07) as u16;
             }
             0xFF11 | 0xFF16 => {
-                self.registers.nrx1 = value;
+                // self.registers.nrx1 = value;
+                // self.timer.duty = ((value & 0xC0) >> 6) as usize;
+                // self.length.counter = 64 - (value & 0x3F) as usize;
+                self.registers.nrx1 = (value & 0xC0) | 63;
                 self.timer.duty = ((value & 0xC0) >> 6) as usize;
-                self.length.counter = 64 - (value & 0x3F) as usize;
+                self.length.counter = 0;
             }
             0xFF12 | 0xFF17 => {
                 self.registers.nrx2 = value;

@@ -89,12 +89,14 @@ impl WaveChannel {
     pub fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
             0xFF1A => {
-                self.registers.nrx0 = value;
+                self.registers.nrx0 = value & 0x80;
                 self.dac_enabled = (value & 0x80) != 0;
             }
             0xFF1B => {
-                self.registers.nrx1 = value;
-                self.length_load = 256 - value as usize;
+                // self.registers.nrx1 = value;
+                // self.length_load = 256 - value as usize;
+                self.registers.nrx1 = 255;
+                self.length_load = 0;
             }
             0xFF1C => {
                 self.registers.nrx2 = value;
