@@ -9,7 +9,7 @@ pub struct WaveChannel {
     pub enabled: bool,
     registers: AudioRegisters,
     dac_enabled: bool,
-    length_load: usize,
+    // length_load: usize,
     length_counter: usize,
     volume_code: u8,
     length_enabled: bool,
@@ -24,12 +24,13 @@ impl WaveChannel {
             clock: 0,
             i: 0,
             enabled: false,
-            registers: AudioRegisters {
-                nrx1: 0xFF,
-                ..AudioRegisters::default()
-            },
+            // registers: AudioRegisters {
+            //     nrx1: 0xFF,
+            //     ..AudioRegisters::default()
+            // },
+            registers: AudioRegisters::default(),
             dac_enabled: false,
-            length_load: 0,
+            // length_load: 0,
             length_counter: 0,
             volume_code: 0,
             length_enabled: false,
@@ -37,11 +38,13 @@ impl WaveChannel {
     }
 
     pub fn dac(&self) -> f32 {
+        let enabled = self.enabled as u8;
+
         let out = match self.volume_code {
-            0 => (self.enabled as u8 * (self.table[self.i] >> 4)) as f32,
-            1 => (self.enabled as u8 * self.table[self.i]) as f32,
-            2 => (self.enabled as u8 * (self.table[self.i] >> 1)) as f32,
-            3 => (self.enabled as u8 * (self.table[self.i] >> 2)) as f32,
+            0 => (enabled * (self.table[self.i] >> 4)) as f32,
+            1 => (enabled * self.table[self.i]) as f32,
+            2 => (enabled * (self.table[self.i] >> 1)) as f32,
+            3 => (enabled * (self.table[self.i] >> 2)) as f32,
             _ => panic!("Invalid volume code."),
         };
 
@@ -63,6 +66,7 @@ impl WaveChannel {
     pub fn length_tick(&mut self) {
         if self.length_enabled && self.length_counter > 0 {
             self.length_counter -= 1;
+
             if self.length_counter == 0 {
                 self.enabled = false;
                 // self.length_enabled = false;
@@ -74,7 +78,7 @@ impl WaveChannel {
     pub fn get_byte(&self, addr: u16) -> u8 {
         match addr {
             0xFF1A => 0x7F | self.registers.nrx0,
-            0xFF1B => self.registers.nrx1,
+            0xFF1B => 0xFF,
             0xFF1C => 0x9F | self.registers.nrx2,
             0xFF1D => 0xFF,
             0xFF1E => 0xBF | self.registers.nrx4,
@@ -89,7 +93,7 @@ impl WaveChannel {
     pub fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
             0xFF1A => {
-                self.registers.nrx0 = value & 0x80;
+                self.registers.nrx0 = value;
 
                 let old_dac_enabled = self.dac_enabled;
                 self.dac_enabled = (value & 0x80) != 0;
@@ -98,10 +102,8 @@ impl WaveChannel {
                 }
             }
             0xFF1B => {
-                // self.registers.nrx1 = value;
-                // self.length_load = 256 - value as usize;
                 self.registers.nrx1 = value;
-                self.length_load = 256 - value as usize;
+                self.length_counter = 256 - value as usize;
             }
             0xFF1C => {
                 self.registers.nrx2 = value;
@@ -110,15 +112,6 @@ impl WaveChannel {
             0xFF1D => {
                 self.registers.nrx3 = value;
                 self.freq = (self.freq & 0x700) | value as u16;
-            }
-            0xFF1E => {
-                self.registers.nrx4 = value;
-                self.length_enabled = (value & 0x40) != 0;
-                self.freq = (self.freq & 0xFF) | (((value & 0x07) as u16) << 8);
-                self.period = (2048 - self.freq as usize) * 2;
-                if (value & 0x80) != 0 {
-                    self.restart();
-                }
             }
             0xFF30..=0xFF3F => {
                 let offset = (addr - 0xFF30) as usize * 2;
@@ -129,22 +122,55 @@ impl WaveChannel {
         }
     }
 
+    pub fn set_nrx4(&mut self, value: u8, counter_wont_clock: bool) {
+        self.registers.nrx4 = value;
+
+        let trigger = (value & 0x80) != 0;
+
+        if trigger {
+            self.restart();
+        }
+
+        if counter_wont_clock
+            && !self.length_enabled
+            && (value & 0x40) != 0
+            && self.length_counter > 0
+        {
+            self.length_counter -= 1;
+
+            if self.length_counter == 0 {
+                if trigger {
+                    self.length_counter = 255;
+                } else {
+                    self.enabled = false;
+                }
+            }
+        }
+
+        self.length_enabled = (value & 0x40) != 0;
+
+        if self.enabled && !self.dac_enabled {
+            self.enabled = false;
+        }
+    }
+
     pub fn restart(&mut self) {
         self.enabled = self.dac_enabled;
 
         if self.length_counter == 0 {
             self.length_counter = 256;
+            self.length_enabled = false;
         }
 
         self.i = 0;
         self.clock = 0;
-        // self.length_counter = self.length_load;
     }
 
     pub fn clear_registers(&mut self) {
-        self.registers = AudioRegisters {
-            nrx1: 0xFF,
-            ..AudioRegisters::default()
-        };
+        // self.registers = AudioRegisters {
+        //     nrx1: 0xFF,
+        //     ..AudioRegisters::default()
+        // };
+        self.registers = AudioRegisters::default();
     }
 }

@@ -78,8 +78,14 @@ impl Apu {
             self.clocks += 1;
             self.sample_clocks += 1;
 
+            self.channel1.tick(1);
+            self.channel2.tick(1);
+            self.channel3.tick(1);
+            self.channel4.tick(1);
+
             if self.clocks >= SEQUENCER_PERIOD {
                 self.clocks -= SEQUENCER_PERIOD;
+
                 match self.seq_ptr {
                     0 => {
                         self.channel1.length_tick();
@@ -88,8 +94,8 @@ impl Apu {
                         self.channel4.length_tick();
                     }
                     2 => {
-                        self.channel1.length_tick();
                         self.channel1.sweep_tick();
+                        self.channel1.length_tick();
                         self.channel2.length_tick();
                         self.channel3.length_tick();
                         self.channel4.length_tick();
@@ -101,8 +107,8 @@ impl Apu {
                         self.channel4.length_tick();
                     }
                     6 => {
-                        self.channel1.length_tick();
                         self.channel1.sweep_tick();
+                        self.channel1.length_tick();
                         self.channel2.length_tick();
                         self.channel3.length_tick();
                         self.channel4.length_tick();
@@ -117,10 +123,10 @@ impl Apu {
                 self.seq_ptr = (self.seq_ptr + 1) % 8;
             }
 
-            self.channel1.tick(1);
-            self.channel2.tick(1);
-            self.channel3.tick(1);
-            self.channel4.tick(1);
+            // self.channel1.tick(1);
+            // self.channel2.tick(1);
+            // self.channel3.tick(1);
+            // self.channel4.tick(1);
 
             if self.sample_clocks >= SAMPLE_RATE {
                 self.sample_clocks -= SAMPLE_RATE;
@@ -184,10 +190,14 @@ impl Apu {
 
     pub fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
-            0xFF10..=0xFF14 if self.master_on => self.channel1.set_byte(addr, value),
-            0xFF15..=0xFF19 if self.master_on => self.channel2.set_byte(addr, value),
-            0xFF1A..=0xFF1E if self.master_on => self.channel3.set_byte(addr, value),
-            0xFF1F..=0xFF23 if self.master_on => self.channel4.set_byte(addr, value),
+            0xFF10..=0xFF13 if self.master_on => self.channel1.set_byte(addr, value),
+            0xFF14 if self.master_on => self.channel1.set_nrx4(value, self.seq_ptr % 2 != 0),
+            0xFF15..=0xFF18 if self.master_on => self.channel2.set_byte(addr, value),
+            0xFF19 if self.master_on => self.channel2.set_nrx4(value, self.seq_ptr % 2 != 0),
+            0xFF1A..=0xFF1D if self.master_on => self.channel3.set_byte(addr, value),
+            0xFF1E if self.master_on => self.channel3.set_nrx4(value, self.seq_ptr % 2 != 0),
+            0xFF1F..=0xFF22 if self.master_on => self.channel4.set_byte(addr, value),
+            0xFF23 if self.master_on => self.channel4.set_nrx4(value, self.seq_ptr % 2 != 0),
             NR50 if self.master_on => {
                 self.master_vol_left = (((value & 0x70) >> 4) as f32) / 7.0;
                 self.master_vol_right = ((value & 0x07) as f32) / 7.0;

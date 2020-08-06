@@ -142,6 +142,7 @@ impl SquareWave {
 
     pub fn sweep_tick(&mut self) {
         self.sweep.clock += 1;
+
         if self.sweep.clock >= self.sweep.period {
             self.sweep.clock -= self.sweep.period;
             // The sweep timer is clocked at 128 Hz by the frame sequencer.
@@ -233,7 +234,7 @@ impl SquareWave {
                 // self.registers.nrx1 = value;
                 // self.timer.duty = ((value & 0xC0) >> 6) as usize;
                 // self.length.counter = 64 - (value & 0x3F) as usize;
-                self.registers.nrx1 = (value & 0xC0) | 63;
+                self.registers.nrx1 = value;
                 self.timer.duty = ((value & 0xC0) >> 6) as usize;
                 self.length.counter = 64 - (value & 0x3F) as usize;
             }
@@ -252,15 +253,56 @@ impl SquareWave {
             0xFF13 | 0xFF18 => {
                 self.registers.nrx3 = value;
             }
-            0xFF14 | 0xFF19 => {
-                self.registers.nrx4 = value;
-                self.length.enabled = (value & 0x40) != 0;
-                if (value & 0x80) != 0 {
-                    self.restart();
-                }
-            }
+            // 0xFF14 | 0xFF19 => {
+            //     self.registers.nrx4 = value;
+            //     self.length.enabled = (value & 0x40) != 0;
+            //     if (value & 0x80) != 0 {
+            //         self.restart();
+            //     }
+            // }
             _ => unreachable!(),
         }
+    }
+
+    pub fn set_nrx4(&mut self, value: u8, counter_wont_clock: bool) {
+        // Extra length clocking occurs when writing to NRx4 when the frame sequencer's
+        // next step is one that doesn't clock the length counter.
+        // In this case, if the length counter was PREVIOUSLY disabled and now
+        // enabled and the length counter is not zero, it is decremented.
+        // If this decrement makes it zero and trigger is clear, the channel is disabled.
+        // On the CGB-02, the length counter only has to have been disabled before;
+        // the current length enable state doesn't matter.
+        // This breaks at least one game (Prehistorik Man), and was fixed on CGB-04 and CGB-05.
+
+        // If a channel is triggered when the frame sequencer's next step is one that
+        // doesn't clock the length counter and the length counter is now enabled
+        // and length is being set to 64 (256 for wave channel) because it was previously zero,
+        // it is set to 63 instead (255 for wave channel).
+        self.registers.nrx4 = value;
+
+        let trigger = (value & 0x80) != 0;
+
+        if trigger {
+            self.restart();
+        }
+
+        if counter_wont_clock
+            && !self.length.enabled
+            && (value & 0x40) != 0
+            && self.length.counter > 0
+        {
+            self.length.counter -= 1;
+
+            if self.length.counter == 0 {
+                if trigger {
+                    self.length.counter = 63;
+                } else {
+                    self.enabled = false;
+                }
+            }
+        }
+
+        self.length.enabled = (value & 0x40) != 0;
     }
 
     pub fn restart(&mut self) {
@@ -268,6 +310,7 @@ impl SquareWave {
 
         if self.length.counter == 0 {
             self.length.counter = 64;
+            self.length.enabled = false;
         }
         // During a trigger event, several things occur:
         //     Square 1's frequency is copied to the shadow register.

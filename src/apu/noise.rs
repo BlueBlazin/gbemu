@@ -6,7 +6,7 @@ const DIVISORS: [usize; 8] = [8, 16, 32, 48, 64, 80, 96, 112];
 pub struct Noise {
     pub clock: usize,
     registers: AudioRegisters,
-    length_load: usize,
+    // length_load: usize,
     volume: VolumeEnvelope,
     dac_enabled: bool,
     length_enabled: bool,
@@ -22,11 +22,12 @@ impl Noise {
     pub fn new() -> Self {
         Self {
             clock: 0,
-            registers: AudioRegisters {
-                nrx1: 0x3F,
-                ..AudioRegisters::default()
-            },
-            length_load: 0,
+            // registers: AudioRegisters {
+            //     nrx1: 0x3F,
+            //     ..AudioRegisters::default()
+            // },
+            registers: AudioRegisters::default(),
+            // length_load: 0,
             volume: VolumeEnvelope::default(),
             dac_enabled: false,
             length_enabled: false,
@@ -101,7 +102,8 @@ impl Noise {
     pub fn get_byte(&mut self, addr: u16) -> u8 {
         match addr {
             0xFF1F => 0xFF,
-            0xFF20 => 0xC0 | self.registers.nrx1,
+            // 0xFF20 => 0xC0 | self.registers.nrx1,
+            0xFF20 => 0xFF,
             0xFF21 => self.registers.nrx2,
             0xFF22 => self.registers.nrx3,
             0xFF23 => 0xBF | self.registers.nrx4,
@@ -116,7 +118,7 @@ impl Noise {
                 // self.registers.nrx1 = value;
                 // self.length_load = 64 - (value & 0x3F) as usize;
                 self.registers.nrx1 = value;
-                self.length_load = 64 - (value & 0x3F) as usize;
+                self.length_counter = 64 - (value & 0x3F) as usize;
             }
             0xFF21 => {
                 self.registers.nrx2 = value;
@@ -138,15 +140,43 @@ impl Noise {
                 self.width_mode = ((value & 0x08) != 0) as u8;
                 self.period = DIVISORS[divisor_code as usize] << shift;
             }
-            0xFF23 => {
-                self.registers.nrx4 = value;
-                self.length_enabled = (value & 0x40) != 0;
-                if (value & 0x80) != 0 {
-                    self.restart();
-                }
-            }
+            // 0xFF23 => {
+            //     self.registers.nrx4 = value;
+            //     self.length_enabled = (value & 0x40) != 0;
+            //     if (value & 0x80) != 0 {
+            //         self.restart();
+            //     }
+            // }
             _ => (),
         }
+    }
+
+    pub fn set_nrx4(&mut self, value: u8, counter_wont_clock: bool) {
+        self.registers.nrx4 = value;
+
+        let trigger = (value & 0x80) != 0;
+
+        if trigger {
+            self.restart();
+        }
+
+        if counter_wont_clock
+            && !self.length_enabled
+            && (value & 0x40) != 0
+            && self.length_counter > 0
+        {
+            self.length_counter -= 1;
+
+            if self.length_counter == 0 {
+                if trigger {
+                    self.length_counter = 63;
+                } else {
+                    self.enabled = false;
+                }
+            }
+        }
+
+        self.length_enabled = (value & 0x40) != 0;
     }
 
     pub fn restart(&mut self) {
@@ -154,6 +184,7 @@ impl Noise {
 
         if self.length_counter == 0 {
             self.length_counter = 64;
+            self.length_enabled = false;
         }
 
         self.clock = 0;
@@ -165,9 +196,10 @@ impl Noise {
     }
 
     pub fn clear_registers(&mut self) {
-        self.registers = AudioRegisters {
-            nrx1: 0x3F,
-            ..AudioRegisters::default()
-        };
+        // self.registers = AudioRegisters {
+        //     nrx1: 0x3F,
+        //     ..AudioRegisters::default()
+        // };
+        self.registers = AudioRegisters::default();
     }
 }
