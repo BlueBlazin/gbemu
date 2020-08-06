@@ -92,8 +92,8 @@ impl Noise {
             self.length_counter -= 1;
             if self.length_counter == 0 {
                 self.enabled = false;
-                self.length_enabled = false;
-                self.registers.nrx4 &= !0x40;
+                // self.length_enabled = false;
+                // self.registers.nrx4 &= !0x40;
             }
         }
     }
@@ -115,15 +115,21 @@ impl Noise {
             0xFF20 => {
                 // self.registers.nrx1 = value;
                 // self.length_load = 64 - (value & 0x3F) as usize;
-                self.registers.nrx1 = 63;
-                self.length_load = 0;
+                self.registers.nrx1 = value;
+                self.length_load = 64 - (value & 0x3F) as usize;
             }
             0xFF21 => {
                 self.registers.nrx2 = value;
-                self.dac_enabled = (value & 0xF8) != 0;
+                // self.dac_enabled = (value & 0xF8) != 0;
                 self.volume.volume = (value & 0xF0) >> 4;
                 self.volume.set_direction((value & 0x8) != 0);
                 self.volume.period = (value & 0x7) as usize;
+
+                let old_dac_enabled = self.dac_enabled;
+                self.dac_enabled = (value & 0xF8) != 0;
+                if old_dac_enabled && !self.dac_enabled {
+                    self.enabled = false;
+                }
             }
             0xFF22 => {
                 self.registers.nrx3 = value;
@@ -144,16 +150,17 @@ impl Noise {
     }
 
     pub fn restart(&mut self) {
-        self.enabled = true;
+        self.enabled = self.dac_enabled;
+
         if self.length_counter == 0 {
             self.length_counter = 64;
         }
+
         self.clock = 0;
+
         self.volume.clock = 0;
         self.volume.volume = (self.registers.nrx2 & 0xF0) >> 4;
-        if !self.dac_enabled {
-            self.enabled = false;
-        }
+
         self.lfsr = 0xFFFF;
     }
 

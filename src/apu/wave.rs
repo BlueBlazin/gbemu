@@ -65,8 +65,8 @@ impl WaveChannel {
             self.length_counter -= 1;
             if self.length_counter == 0 {
                 self.enabled = false;
-                self.length_enabled = false;
-                self.registers.nrx4 &= !0x40;
+                // self.length_enabled = false;
+                // self.registers.nrx4 &= !0x40;
             }
         }
     }
@@ -90,13 +90,18 @@ impl WaveChannel {
         match addr {
             0xFF1A => {
                 self.registers.nrx0 = value & 0x80;
+
+                let old_dac_enabled = self.dac_enabled;
                 self.dac_enabled = (value & 0x80) != 0;
+                if old_dac_enabled && !self.dac_enabled {
+                    self.enabled = false;
+                }
             }
             0xFF1B => {
                 // self.registers.nrx1 = value;
                 // self.length_load = 256 - value as usize;
-                self.registers.nrx1 = 255;
-                self.length_load = 0;
+                self.registers.nrx1 = value;
+                self.length_load = 256 - value as usize;
             }
             0xFF1C => {
                 self.registers.nrx2 = value;
@@ -125,13 +130,15 @@ impl WaveChannel {
     }
 
     pub fn restart(&mut self) {
-        self.enabled = true;
+        self.enabled = self.dac_enabled;
+
         if self.length_counter == 0 {
             self.length_counter = 256;
         }
+
         self.i = 0;
         self.clock = 0;
-        self.length_counter = self.length_load;
+        // self.length_counter = self.length_load;
     }
 
     pub fn clear_registers(&mut self) {

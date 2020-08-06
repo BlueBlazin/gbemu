@@ -184,8 +184,8 @@ impl SquareWave {
             self.length.counter -= 1;
             if self.length.counter == 0 {
                 self.enabled = false;
-                self.length.enabled = false;
-                self.registers.nrx4 &= !0x40;
+                // self.length.enabled = false;
+                // self.registers.nrx4 &= !0x40;
             }
         }
     }
@@ -235,14 +235,19 @@ impl SquareWave {
                 // self.length.counter = 64 - (value & 0x3F) as usize;
                 self.registers.nrx1 = (value & 0xC0) | 63;
                 self.timer.duty = ((value & 0xC0) >> 6) as usize;
-                self.length.counter = 0;
+                self.length.counter = 64 - (value & 0x3F) as usize;
             }
             0xFF12 | 0xFF17 => {
                 self.registers.nrx2 = value;
-                self.dac_enabled = (value & 0xF8) != 0;
                 self.volume.volume = (value & 0xF0) >> 4;
                 self.volume.set_direction((value & 0x8) != 0);
                 self.volume.period = (value & 0x7) as usize;
+
+                let old_dac_enabled = self.dac_enabled;
+                self.dac_enabled = (value & 0xF8) != 0;
+                if old_dac_enabled && !self.dac_enabled {
+                    self.enabled = false;
+                }
             }
             0xFF13 | 0xFF18 => {
                 self.registers.nrx3 = value;
@@ -259,7 +264,7 @@ impl SquareWave {
     }
 
     pub fn restart(&mut self) {
-        self.enabled = true;
+        self.enabled = self.dac_enabled;
 
         if self.length.counter == 0 {
             self.length.counter = 64;
@@ -285,10 +290,6 @@ impl SquareWave {
         self.timer.set_period(freq);
         self.volume.clock = 0;
         self.volume.volume = (self.registers.nrx2 & 0xF0) >> 4;
-
-        if !self.dac_enabled {
-            self.enabled = false;
-        }
     }
 
     pub fn clear_registers(&mut self) {

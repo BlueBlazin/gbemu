@@ -115,7 +115,7 @@ export class Emulation {
       }
 
       if (event == EVENT_AUDIO_BUFFER_FULL) {
-        this.playAudio();
+        // this.playAudio();
       }
 
       if (event == EVENT_MAX_CYCLES) {
