@@ -41,6 +41,7 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 export class Emulation {
   start(romData) {
+    console.log(romData.length);
     this.gb = Emulator.new(romData);
     // this.screenPtr = this.gb.screen();
 

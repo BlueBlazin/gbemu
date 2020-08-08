@@ -237,7 +237,6 @@ impl Apu {
                     self.channel1.timer.step = 0;
                     self.channel2.timer.step = 0;
                     self.channel3.sample = 0;
-                    self.channel3.clock = 0;
                 }
             }
             0xFF30..=0xFF3F => self.channel3.set_byte(addr, value),

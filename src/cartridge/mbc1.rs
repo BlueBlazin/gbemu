@@ -19,10 +19,17 @@ pub struct Mbc1 {
 
     bank1: u8,
     bank2: u8,
+
+    max_banks: u8,
+    size: usize,
 }
 
 impl Mbc1 {
     pub fn new(data: Vec<u8>) -> Self {
+        let size = data.len();
+
+        let max_banks = 2u32.pow(data[0x148] as u32) as u8;
+
         let ram_size = match data[0x0149] {
             1 => 0x800,
             2 => 0x2000,
@@ -39,6 +46,9 @@ impl Mbc1 {
 
             bank1: 1,
             bank2: 0,
+
+            max_banks,
+            size,
         }
     }
 }
@@ -55,9 +65,16 @@ impl Mbc for Mbc1 {
                 }
             },
             0x4000..=0x7FFF => {
-                let bank = self.bank2 << 5 | self.bank1;
+                let bank = (self.bank2 << 5) | self.bank1;
+                // let old_addr = addr;
                 let addr = bank as usize * ROM_BANK_SIZE + (addr as usize - ROM_OFFSET);
-                self.rom[addr]
+                // if addr >= self.rom.len() {
+                //     println!(
+                //         "\nlogical_addr: {}, addr: {:#X}, bank1: {:#X}, bank2: {:#X}\n",
+                //         old_addr, addr, self.bank1, self.bank2
+                //     );
+                // }
+                self.rom[addr % self.size]
             }
             0xA000..=0xBFFF => {
                 if !self.ram_enabled {

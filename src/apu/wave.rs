@@ -4,8 +4,8 @@ pub struct WaveChannel {
     pub table: [u8; 32],
     wave_ram: [u8; 16],
     pub freq: u16,
-    pub period: usize,
-    pub clock: usize,
+    // pub period: usize,
+    // pub clock: usize,
     pub i: usize,
     pub enabled: bool,
     pub sample: u8,
@@ -14,6 +14,7 @@ pub struct WaveChannel {
     length_counter: usize,
     volume_code: u8,
     length_enabled: bool,
+    pub counter: usize,
 }
 
 impl WaveChannel {
@@ -28,8 +29,8 @@ impl WaveChannel {
                 0x00, 0xFF,
             ],
             freq: 0,
-            period: 0,
-            clock: 0,
+            // period: 0,
+            // clock: 0,
             i: 0,
             enabled: false,
             sample: 0,
@@ -38,6 +39,7 @@ impl WaveChannel {
             length_counter: 0,
             volume_code: 0,
             length_enabled: false,
+            counter: 0,
         }
     }
 
@@ -55,19 +57,38 @@ impl WaveChannel {
         out / 15.0 * 2.0 - 1.0
     }
 
+    // pub fn tick(&mut self, cycles: usize) {
+    //     if !self.enabled {
+    //         return;
+    //     }
+
+    //     self.clock += cycles;
+
+    //     if self.clock >= self.period {
+    //         self.clock -= self.period;
+
+    //         self.i = (self.i + 1) % 32;
+
+    //         self.sample = self.table[self.i];
+    //     }
+    // }
+
     pub fn tick(&mut self, cycles: usize) {
         if !self.enabled {
             return;
         }
 
-        self.clock += cycles;
+        if self.counter <= cycles {
+            let delta = cycles - self.counter;
 
-        if self.clock >= self.period {
-            self.clock -= self.period;
+            self.counter = ((2048 - self.freq) * 2) as usize;
+            self.counter -= delta;
 
             self.i = (self.i + 1) % 32;
 
             self.sample = self.table[self.i];
+        } else {
+            self.counter -= cycles;
         }
     }
 
@@ -124,12 +145,16 @@ impl WaveChannel {
                 self.freq = (self.freq & 0x700) | value as u16;
             }
             0xFF30..=0xFF3F => {
-                let offset = (addr - 0xFF30) as usize;
+                if self.enabled {
+                    self.wave_ram[self.i / 2] = value;
+                } else {
+                    let offset = (addr - 0xFF30) as usize;
 
-                self.table[offset * 2] = value >> 4;
-                self.table[offset * 2 + 1] = value & 0x0F;
+                    self.table[offset * 2] = value >> 4;
+                    self.table[offset * 2 + 1] = value & 0x0F;
 
-                self.wave_ram[offset] = value;
+                    self.wave_ram[offset] = value;
+                }
             }
             _ => (),
         }
@@ -172,18 +197,20 @@ impl WaveChannel {
     pub fn trigger(&mut self) {
         self.enabled = true;
 
-        self.period = ((2048 - self.freq) * 2) as usize;
+        // self.period = ((2048 - self.freq) * 2) as usize;
 
         if self.length_counter == 0 {
             self.length_counter = 256;
             self.length_enabled = false;
         }
 
-        let high_nibble = self.i - (self.i % 2);
-        self.sample = self.table[high_nibble];
+        // let high_nibble = self.i - (self.i % 2);
+        // self.sample = self.table[high_nibble];
 
         self.i = 0;
-        self.clock = 0;
+        // self.clock = 0;
+        self.counter = ((2048 - self.freq) * 2) as usize;
+        self.counter += 6;
 
         if !self.dac_enabled {
             self.enabled = false;
@@ -191,10 +218,6 @@ impl WaveChannel {
     }
 
     pub fn clear_registers(&mut self) {
-        // self.registers = AudioRegisters {
-        //     nrx1: 0xFF,
-        //     ..AudioRegisters::default()
-        // };
         self.registers = AudioRegisters::default();
     }
 }
