@@ -68,9 +68,8 @@ pub struct SquareWave {
     pub output_volume: u8,
     registers: AudioRegisters,
     pub timer: Timer,
-    // sweep: Sweep,
     length: LengthCounter,
-    volume: VolumeEnvelope,
+    // volume: VolumeEnvelope,
     pub enabled: bool,
     dac_enabled: bool,
 
@@ -81,6 +80,13 @@ pub struct SquareWave {
     sweep_enabled: bool,
     sweep_counter: usize,
     sweep_negate_used: bool,
+
+    volume: u8,
+    starting_volume: u8,
+    volume_add: bool,
+    volume_period: usize,
+    volume_counter: usize,
+    volume_auto_update: bool,
 }
 
 impl SquareWave {
@@ -89,9 +95,8 @@ impl SquareWave {
             output_volume: 0,
             registers: AudioRegisters::default(),
             timer: Timer::default(),
-            // sweep: Sweep::default(),
             length: LengthCounter::default(),
-            volume: VolumeEnvelope::default(),
+            // volume: VolumeEnvelope::default(),
             enabled: false,
             dac_enabled: false,
 
@@ -102,6 +107,13 @@ impl SquareWave {
             sweep_enabled: false,
             sweep_counter: 0,
             sweep_negate_used: false,
+
+            volume: 0,
+            starting_volume: 0,
+            volume_add: false,
+            volume_period: 0,
+            volume_counter: 0,
+            volume_auto_update: false,
         }
     }
 
@@ -117,7 +129,7 @@ impl SquareWave {
         self.timer.tick(cycles);
 
         self.output_volume = if self.enabled && DUTY_TABLE[self.timer.duty][self.timer.step] {
-            self.volume.volume
+            self.volume
         } else {
             0
         };
@@ -179,20 +191,32 @@ impl SquareWave {
     }
 
     pub fn volume_tick(&mut self) {
-        if self.volume.period == 0 {
+        if !self.enabled || !self.volume_auto_update {
             return;
         }
 
-        self.volume.clock += 1;
+        self.volume_counter -= 1;
 
-        if self.volume.clock >= self.volume.period {
-            self.volume.clock -= self.volume.period;
+        if self.volume_counter == 0 {
+            if self.volume_period == 0 {
+                self.volume_counter = 8;
+            } else {
+                self.volume_counter = self.volume_period;
 
-            self.volume.volume = match self.volume.direction {
-                EnvelopeDirection::Increase if self.volume.volume < 15 => self.volume.volume + 1,
-                EnvelopeDirection::Decrease if self.volume.volume > 0 => self.volume.volume - 1,
-                _ => self.volume.volume,
-            };
+                if self.volume_add {
+                    if self.volume < 0xF {
+                        self.volume += 1;
+                    } else {
+                        self.volume_auto_update = false;
+                    }
+                } else {
+                    if self.volume > 0 {
+                        self.volume -= 1;
+                    } else {
+                        self.volume_auto_update = false;
+                    }
+                }
+            }
         }
     }
 
@@ -213,6 +237,7 @@ impl SquareWave {
             0xFF15 => self.registers.nrx0 = value,
             0xFF10 => {
                 self.registers.nrx0 = value;
+
                 self.sweep_period = (value & 0x70) >> 4;
 
                 let old_sweep_negate = self.sweep_negate;
@@ -226,14 +251,16 @@ impl SquareWave {
             }
             0xFF11 | 0xFF16 => {
                 self.registers.nrx1 = value;
+
                 self.timer.duty = ((value & 0xC0) >> 6) as usize;
                 self.length.counter = 64 - (value & 0x3F) as usize;
             }
             0xFF12 | 0xFF17 => {
                 self.registers.nrx2 = value;
-                self.volume.volume = (value & 0xF0) >> 4;
-                self.volume.set_direction((value & 0x8) != 0);
-                self.volume.period = (value & 0x7) as usize;
+
+                self.starting_volume = (value & 0xF0) >> 4;
+                self.volume_add = (value & 0x8) != 0;
+                self.volume_period = (value & 0x7) as usize;
 
                 let old_dac_enabled = self.dac_enabled;
                 self.dac_enabled = (value & 0xF8) != 0;
@@ -249,19 +276,6 @@ impl SquareWave {
     }
 
     pub fn set_nrx4(&mut self, value: u8, counter_wont_clock: bool) {
-        // Extra length clocking occurs when writing to NRx4 when the frame sequencer's
-        // next step is one that doesn't clock the length counter.
-        // In this case, if the length counter was PREVIOUSLY disabled and now
-        // enabled and the length counter is not zero, it is decremented.
-        // If this decrement makes it zero and trigger is clear, the channel is disabled.
-        // On the CGB-02, the length counter only has to have been disabled before;
-        // the current length enable state doesn't matter.
-        // This breaks at least one game (Prehistorik Man), and was fixed on CGB-04 and CGB-05.
-
-        // If a channel is triggered when the frame sequencer's next step is one that
-        // doesn't clock the length counter and the length counter is now enabled
-        // and length is being set to 64 (256 for wave channel) because it was previously zero,
-        // it is set to 63 instead (255 for wave channel).
         self.registers.nrx4 = value;
 
         let trigger = (value & 0x80) != 0;
@@ -315,8 +329,15 @@ impl SquareWave {
             self.freq_calc_and_overflow_check();
         }
 
-        self.volume.clock = 0;
-        self.volume.volume = (self.registers.nrx2 & 0xF0) >> 4;
+        self.volume = self.starting_volume;
+
+        self.volume_counter = self.volume_period;
+
+        if self.volume_counter == 0 {
+            self.volume_counter = 8;
+        }
+
+        self.volume_auto_update = true;
 
         if !self.dac_enabled {
             self.enabled = false;
