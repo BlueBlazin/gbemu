@@ -157,7 +157,7 @@ impl Noise {
         let trigger = (value & 0x80) != 0;
 
         if trigger {
-            self.restart();
+            self.trigger();
         }
 
         if counter_wont_clock
@@ -179,7 +179,7 @@ impl Noise {
         self.length_enabled = (value & 0x40) != 0;
     }
 
-    pub fn restart(&mut self) {
+    pub fn trigger(&mut self) {
         self.enabled = self.dac_enabled;
 
         if self.length_counter == 0 {

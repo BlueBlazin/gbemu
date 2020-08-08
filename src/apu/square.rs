@@ -28,53 +28,20 @@ impl Default for Timer {
 
 impl Timer {
     pub fn set_period(&mut self, freq: u16) {
-        self.period = ((2048 - freq) * 4) as usize;
         self.clock = 0;
+        self.period = ((2048 - freq) * 4) as usize;
     }
 
     pub fn tick(&mut self, cycles: usize) {
         if self.period == 0 {
             return;
         }
+
         self.clock += cycles;
+
         if self.clock >= self.period {
             self.clock -= self.period;
             self.step = (self.step + 1) % 8;
-        }
-    }
-}
-
-// ----------------------------------------------------------------------------------------------------
-
-pub struct Sweep {
-    pub shadow_freq: u16,
-    pub shift: u16,
-    pub clock: usize,
-    pub period: usize,
-    pub negate: bool,
-    pub enabled: bool,
-}
-
-impl Default for Sweep {
-    fn default() -> Self {
-        Sweep {
-            shadow_freq: 0,
-            shift: 0,
-            clock: 0,
-            period: 0,
-            negate: true,
-            enabled: false,
-        }
-    }
-}
-
-impl Sweep {
-    fn next_freq(&mut self) -> u16 {
-        if self.negate {
-            self.shadow_freq
-                .wrapping_sub(self.shadow_freq >> self.shift)
-        } else {
-            self.shadow_freq + self.shadow_freq >> self.shift
         }
     }
 }
@@ -100,12 +67,20 @@ impl Default for LengthCounter {
 pub struct SquareWave {
     pub output_volume: u8,
     registers: AudioRegisters,
-    timer: Timer,
-    sweep: Sweep,
+    pub timer: Timer,
+    // sweep: Sweep,
     length: LengthCounter,
     volume: VolumeEnvelope,
     pub enabled: bool,
     dac_enabled: bool,
+
+    shadow_freq: u16,
+    sweep_period: u8,
+    sweep_negate: bool,
+    sweep_shift: u8,
+    sweep_enabled: bool,
+    sweep_counter: usize,
+    sweep_negate_used: bool,
 }
 
 impl SquareWave {
@@ -114,11 +89,19 @@ impl SquareWave {
             output_volume: 0,
             registers: AudioRegisters::default(),
             timer: Timer::default(),
-            sweep: Sweep::default(),
+            // sweep: Sweep::default(),
             length: LengthCounter::default(),
             volume: VolumeEnvelope::default(),
             enabled: false,
             dac_enabled: false,
+
+            shadow_freq: 0,
+            sweep_period: 0,
+            sweep_negate: false,
+            sweep_shift: 0,
+            sweep_enabled: false,
+            sweep_counter: 0,
+            sweep_negate_used: false,
         }
     }
 
@@ -141,43 +124,49 @@ impl SquareWave {
     }
 
     pub fn sweep_tick(&mut self) {
-        self.sweep.clock += 1;
+        if !self.enabled || !self.sweep_enabled {
+            return;
+        }
 
-        if self.sweep.clock >= self.sweep.period {
-            self.sweep.clock -= self.sweep.period;
-            // The sweep timer is clocked at 128 Hz by the frame sequencer.
-            // When it generates a clock and the sweep's internal enabled flag is set and
-            // the sweep period is not zero, a new frequency is calculated and the overflow
-            // check is performed. If the new frequency is 2047 or less and the sweep shift
-            // is not zero, this new frequency is written back to the shadow frequency
-            // and square 1's frequency in NR13 and NR14, then frequency calculation and overflow
-            // check are run AGAIN immediately using this new value, but this second new frequency is not written back.
+        self.sweep_counter -= 1;
 
-            // Square 1's frequency can be modified via NR13 and NR14 while sweep
-            // is active, but the shadow frequency won't be affected so the next time the
-            // sweep updates the channel's frequency this modification will be lost.
+        if self.sweep_counter == 0 {
+            if self.sweep_period == 0 {
+                self.sweep_counter = 8;
+            } else {
+                self.sweep_counter = self.sweep_period as usize;
 
-            if self.sweep.enabled && self.sweep.period != 0 {
-                let next_freq = self.sweep_and_overflow();
+                let freq = self.freq_calc_and_overflow_check();
 
-                if next_freq <= 2047 && self.sweep.shift != 0 {
-                    self.sweep.shadow_freq = next_freq;
-                    self.registers.nrx3 = (next_freq & 0xFF) as u8;
-                    self.registers.nrx4 = ((next_freq >> 8) & 0x07) as u8;
-                    self.timer.set_period(next_freq);
+                if self.enabled && self.sweep_shift > 0 {
+                    if freq <= 2047 {
+                        self.shadow_freq = freq;
+                        self.registers.nrx3 = freq as u8;
+                        self.registers.nrx4 |= (freq >> 8) as u8;
+                        self.timer.set_period(self.shadow_freq);
+                    }
+
+                    self.freq_calc_and_overflow_check();
                 }
-
-                self.sweep_and_overflow();
             }
         }
     }
 
-    fn sweep_and_overflow(&mut self) -> u16 {
-        let next_freq = self.sweep.next_freq();
-        if next_freq > 2047 {
+    fn freq_calc_and_overflow_check(&mut self) -> u16 {
+        let mut freq = self.shadow_freq >> self.sweep_shift;
+
+        freq = if self.sweep_negate {
+            self.sweep_negate_used = true;
+            self.shadow_freq - freq
+        } else {
+            self.shadow_freq + freq
+        };
+
+        if freq > 2047 {
             self.enabled = false;
         }
-        next_freq
+
+        freq
     }
 
     pub fn length_tick(&mut self) {
@@ -185,8 +174,6 @@ impl SquareWave {
             self.length.counter -= 1;
             if self.length.counter == 0 {
                 self.enabled = false;
-                // self.length.enabled = false;
-                // self.registers.nrx4 &= !0x40;
             }
         }
     }
@@ -226,14 +213,18 @@ impl SquareWave {
             0xFF15 => self.registers.nrx0 = value,
             0xFF10 => {
                 self.registers.nrx0 = value;
-                self.sweep.period = ((value & 0x70) >> 4) as usize;
-                self.sweep.negate = (value & 0x08) != 0;
-                self.sweep.shift = (value & 0x07) as u16;
+                self.sweep_period = (value & 0x70) >> 4;
+
+                let old_sweep_negate = self.sweep_negate;
+                self.sweep_negate = (value & 0x08) != 0;
+
+                if old_sweep_negate && !self.sweep_negate && self.sweep_negate_used {
+                    self.enabled = false;
+                }
+
+                self.sweep_shift = value & 0x07;
             }
             0xFF11 | 0xFF16 => {
-                // self.registers.nrx1 = value;
-                // self.timer.duty = ((value & 0xC0) >> 6) as usize;
-                // self.length.counter = 64 - (value & 0x3F) as usize;
                 self.registers.nrx1 = value;
                 self.timer.duty = ((value & 0xC0) >> 6) as usize;
                 self.length.counter = 64 - (value & 0x3F) as usize;
@@ -253,13 +244,6 @@ impl SquareWave {
             0xFF13 | 0xFF18 => {
                 self.registers.nrx3 = value;
             }
-            // 0xFF14 | 0xFF19 => {
-            //     self.registers.nrx4 = value;
-            //     self.length.enabled = (value & 0x40) != 0;
-            //     if (value & 0x80) != 0 {
-            //         self.restart();
-            //     }
-            // }
             _ => unreachable!(),
         }
     }
@@ -283,7 +267,7 @@ impl SquareWave {
         let trigger = (value & 0x80) != 0;
 
         if trigger {
-            self.restart();
+            self.trigger();
         }
 
         if counter_wont_clock
@@ -305,37 +289,46 @@ impl SquareWave {
         self.length.enabled = (value & 0x40) != 0;
     }
 
-    pub fn restart(&mut self) {
-        self.enabled = self.dac_enabled;
+    pub fn trigger(&mut self) {
+        self.enabled = true;
 
         if self.length.counter == 0 {
             self.length.counter = 64;
             self.length.enabled = false;
         }
-        // During a trigger event, several things occur:
-        //     Square 1's frequency is copied to the shadow register.
-        //     The sweep timer is reloaded.
-        //     The internal enabled flag is set if either the sweep period or shift are non-zero, cleared otherwise.
-        //     If the sweep shift is non-zero, frequency calculation and the overflow check are performed immediately.
-        self.sweep.shadow_freq = (self.sweep.shadow_freq & 0x700) | self.registers.nrx3 as u16;
-        self.sweep.shadow_freq =
-            (self.sweep.shadow_freq & 0xFF) | (((self.registers.nrx4 & 0x07) as u16) << 8);
 
-        let freq = self.sweep.shadow_freq;
+        self.shadow_freq = (self.registers.nrx4 as u16 & 0x7) << 8 | self.registers.nrx3 as u16;
 
-        self.sweep.clock = 0;
-        self.sweep.enabled = (self.sweep.period != 0) || (self.sweep.shift != 0);
-        if self.sweep.shift != 0 {
-            self.sweep_and_overflow();
+        self.timer.set_period(self.shadow_freq);
+
+        self.sweep_counter = self.sweep_period as usize;
+
+        if self.sweep_counter == 0 {
+            self.sweep_counter = 8;
         }
 
-        self.timer.step = 0;
-        self.timer.set_period(freq);
+        self.sweep_enabled = self.sweep_period > 0 || self.sweep_shift > 0;
+
+        self.sweep_negate_used = false;
+
+        if self.sweep_shift > 0 {
+            self.freq_calc_and_overflow_check();
+        }
+
         self.volume.clock = 0;
         self.volume.volume = (self.registers.nrx2 & 0xF0) >> 4;
+
+        if !self.dac_enabled {
+            self.enabled = false;
+        }
     }
 
     pub fn clear_registers(&mut self) {
-        self.registers = AudioRegisters::default();
+        // self.registers = AudioRegisters::default();
+        self.registers.nrx0 = 0;
+        self.registers.nrx1 = 0;
+        self.registers.nrx2 = 0;
+        self.registers.nrx3 = 0;
+        self.registers.nrx4 = 0;
     }
 }

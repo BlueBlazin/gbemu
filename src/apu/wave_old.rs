@@ -2,18 +2,17 @@ use crate::apu::AudioRegisters;
 
 pub struct WaveChannel {
     pub table: [u8; 32],
-    wave_ram: [u8; 16],
     pub freq: u16,
     pub period: usize,
     pub clock: usize,
     pub i: usize,
     pub enabled: bool,
-    pub sample: u8,
     registers: AudioRegisters,
     dac_enabled: bool,
     length_counter: usize,
     volume_code: u8,
     length_enabled: bool,
+    pub start_clocking: bool,
 }
 
 impl WaveChannel {
@@ -23,32 +22,28 @@ impl WaveChannel {
                 0x0, 0x0, 0xF, 0xF, 0x0, 0x0, 0xF, 0xF, 0x0, 0x0, 0xF, 0xF, 0x0, 0x0, 0xF, 0xF,
                 0x0, 0x0, 0xF, 0xF, 0x0, 0x0, 0xF, 0xF, 0x0, 0x0, 0xF, 0xF, 0x0, 0x0, 0xF, 0xF,
             ],
-            wave_ram: [
-                0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF, 0x00, 0xFF,
-                0x00, 0xFF,
-            ],
             freq: 0,
             period: 0,
             clock: 0,
             i: 0,
             enabled: false,
-            sample: 0,
             registers: AudioRegisters::default(),
             dac_enabled: false,
             length_counter: 0,
             volume_code: 0,
             length_enabled: false,
+            start_clocking: false,
         }
     }
 
     pub fn dac(&self) -> f32 {
-        let enabled = (self.enabled && self.dac_enabled) as u8;
+        let enabled = self.enabled as u8;
 
         let out = match self.volume_code {
-            0 => (enabled * (self.sample >> 4)) as f32,
-            1 => (enabled * (self.sample >> 0)) as f32,
-            2 => (enabled * (self.sample >> 1)) as f32,
-            3 => (enabled * (self.sample >> 2)) as f32,
+            0 => (enabled * (self.table[self.i] >> 4)) as f32,
+            1 => (enabled * self.table[self.i]) as f32,
+            2 => (enabled * (self.table[self.i] >> 1)) as f32,
+            3 => (enabled * (self.table[self.i] >> 2)) as f32,
             _ => panic!("Invalid volume code."),
         };
 
@@ -56,7 +51,7 @@ impl WaveChannel {
     }
 
     pub fn tick(&mut self, cycles: usize) {
-        if !self.enabled {
+        if !self.enabled || !self.start_clocking {
             return;
         }
 
@@ -64,10 +59,7 @@ impl WaveChannel {
 
         if self.clock >= self.period {
             self.clock -= self.period;
-
             self.i = (self.i + 1) % 32;
-
-            self.sample = self.table[self.i];
         }
     }
 
@@ -90,13 +82,13 @@ impl WaveChannel {
             0xFF1E => 0xBF | self.registers.nrx4,
             0xFF30..=0xFF3F => {
                 if self.enabled {
-                    self.wave_ram[self.i / 2]
+                    (self.table[self.i] << 4) | self.table[self.i + 1]
                 } else {
-                    let offset = (addr - 0xFF30) as usize;
-                    self.wave_ram[offset]
+                    let offset = (addr - 0xFF30) as usize * 2;
+                    (self.table[offset] << 4) | self.table[offset + 1]
                 }
             }
-            _ => 0xFF,
+            _ => 0x00,
         }
     }
 
@@ -124,12 +116,9 @@ impl WaveChannel {
                 self.freq = (self.freq & 0x700) | value as u16;
             }
             0xFF30..=0xFF3F => {
-                let offset = (addr - 0xFF30) as usize;
-
-                self.table[offset * 2] = value >> 4;
-                self.table[offset * 2 + 1] = value & 0x0F;
-
-                self.wave_ram[offset] = value;
+                let offset = (addr - 0xFF30) as usize * 2;
+                self.table[offset] = value >> 4;
+                self.table[offset + 1] = value & 0x0F;
             }
             _ => (),
         }
@@ -138,7 +127,7 @@ impl WaveChannel {
     pub fn set_nrx4(&mut self, value: u8, counter_wont_clock: bool) {
         self.registers.nrx4 = value;
 
-        self.freq = (self.freq & 0xFF) | ((value as u16 & 0x7) << 8);
+        self.freq = (value as u16 & 0x7) << 8 | self.freq;
 
         let trigger = (value & 0x80) != 0;
 
@@ -170,7 +159,8 @@ impl WaveChannel {
     }
 
     pub fn trigger(&mut self) {
-        self.enabled = true;
+        self.start_clocking = true;
+        self.enabled = self.dac_enabled;
 
         self.period = ((2048 - self.freq) * 2) as usize;
 
@@ -179,15 +169,8 @@ impl WaveChannel {
             self.length_enabled = false;
         }
 
-        let high_nibble = self.i - (self.i % 2);
-        self.sample = self.table[high_nibble];
-
         self.i = 0;
         self.clock = 0;
-
-        if !self.dac_enabled {
-            self.enabled = false;
-        }
     }
 
     pub fn clear_registers(&mut self) {

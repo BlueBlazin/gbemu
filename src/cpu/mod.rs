@@ -1538,7 +1538,8 @@ mod tests {
         // let rom = fs::read("roms/acceptance/ei_timing.gb").unwrap();
         // let rom = fs::read("roms/interrupt_time.gb").unwrap();
         // let rom = fs::read("roms/Shantae (USA).gbc").unwrap();
-        let rom = fs::read("roms/01-registers.gb").unwrap();
+        // let rom = fs::read("roms/01-registers.gb").unwrap();
+        let rom = fs::read("roms/11-regs after power.gb").unwrap();
         // let rom = fs::read("roms/Aladdin (USA).gbc").unwrap();
         // let rom = fs::read("roms/dmg-acid2.gb").unwrap();
         // let rom = fs::read("roms/cgb-acid2.gbc").unwrap();

@@ -78,10 +78,25 @@ impl Apu {
             self.clocks += 1;
             self.sample_clocks += 1;
 
+            // if self.master_on {
+            //     self.channel1.tick(1);
+            //     self.channel2.tick(1);
+            //     self.channel3.tick(1);
+            //     self.channel4.tick(1);
+            // }
+
             self.channel1.tick(1);
             self.channel2.tick(1);
             self.channel3.tick(1);
             self.channel4.tick(1);
+
+            if self.sample_clocks >= SAMPLE_RATE {
+                self.sample_clocks -= SAMPLE_RATE;
+                let left = self.audio_out_left();
+                let right = self.audio_out_right();
+                self.samples.push(left, right);
+                self.i += 1;
+            }
 
             if self.clocks >= SEQUENCER_PERIOD {
                 self.clocks -= SEQUENCER_PERIOD;
@@ -128,30 +143,33 @@ impl Apu {
             // self.channel3.tick(1);
             // self.channel4.tick(1);
 
-            if self.sample_clocks >= SAMPLE_RATE {
-                self.sample_clocks -= SAMPLE_RATE;
-                let left = self.audio_out_left();
-                let right = self.audio_out_right();
-                self.samples.push(left, right);
-                self.i += 1;
-            }
+            // if self.sample_clocks >= SAMPLE_RATE {
+            //     self.sample_clocks -= SAMPLE_RATE;
+            //     let left = self.audio_out_left();
+            //     let right = self.audio_out_right();
+            //     self.samples.push(left, right);
+            //     self.i += 1;
+            // }
         }
     }
 
     fn audio_out_left(&mut self) -> f32 {
         let gain = (self.master_on as u8 as f32) * self.master_vol_left;
         let tot_amp = self.total_amp(self.nr51 >> 4) * gain;
+
         tot_amp / 4.0
     }
 
     fn audio_out_right(&mut self) -> f32 {
         let gain = (self.master_on as u8 as f32) * self.master_vol_right;
         let tot_amp = self.total_amp(self.nr51) * gain;
+
         tot_amp / 4.0
     }
 
     fn total_amp(&self, nr51: u8) -> f32 {
         let mut tot_amp = 0.0;
+
         if self.channel1.enabled && (nr51 & 0x1) != 0 {
             tot_amp += self.channel1.dac();
         }
@@ -164,6 +182,7 @@ impl Apu {
         if self.channel4.enabled && (nr51 & 0x8) != 0 {
             tot_amp += self.channel4.dac();
         }
+
         tot_amp
     }
 
@@ -205,13 +224,20 @@ impl Apu {
             }
             NR51 if self.master_on => self.nr51 = value,
             NR52 => {
+                let old_master_on = self.master_on;
+
                 self.master_on = (value & 0x80) != 0;
-                if !self.master_on {
-                    self.channel1.enabled = false;
-                    self.channel2.enabled = false;
-                    self.channel3.enabled = false;
-                    self.channel4.enabled = false;
+
+                if old_master_on && !self.master_on {
                     self.clear_registers();
+                }
+
+                if !old_master_on && self.master_on {
+                    self.seq_ptr = 0;
+                    self.channel1.timer.step = 0;
+                    self.channel2.timer.step = 0;
+                    self.channel3.sample = 0;
+                    self.channel3.clock = 0;
                 }
             }
             0xFF30..=0xFF3F => self.channel3.set_byte(addr, value),
@@ -220,12 +246,19 @@ impl Apu {
     }
 
     fn clear_registers(&mut self) {
-        self.nr50 = 0x0;
-        self.nr51 = 0x0;
-        self.channel1.clear_registers();
-        self.channel2.clear_registers();
-        self.channel3.clear_registers();
-        self.channel4.clear_registers();
+        // self.nr50 = 0x0;
+        // self.nr51 = 0x0;
+        self.master_on = true;
+
+        for addr in 0xFF10..=0xFF25 {
+            self.set_byte(addr, 0);
+        }
+
+        self.master_on = false;
+        // self.channel1.clear_registers();
+        // self.channel2.clear_registers();
+        // self.channel3.clear_registers();
+        // self.channel4.clear_registers();
     }
 
     pub fn get_next_buffer(&mut self) -> (Option<Vec<f32>>, Option<Vec<f32>>) {
