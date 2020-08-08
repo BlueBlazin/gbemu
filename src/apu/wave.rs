@@ -57,22 +57,6 @@ impl WaveChannel {
         out / 15.0 * 2.0 - 1.0
     }
 
-    // pub fn tick(&mut self, cycles: usize) {
-    //     if !self.enabled {
-    //         return;
-    //     }
-
-    //     self.clock += cycles;
-
-    //     if self.clock >= self.period {
-    //         self.clock -= self.period;
-
-    //         self.i = (self.i + 1) % 32;
-
-    //         self.sample = self.table[self.i];
-    //     }
-    // }
-
     pub fn tick(&mut self, cycles: usize) {
         if !self.enabled {
             return;

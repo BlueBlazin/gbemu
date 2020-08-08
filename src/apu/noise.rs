@@ -3,7 +3,10 @@ use crate::apu::AudioRegisters;
 const DIVISORS: [usize; 8] = [8, 16, 32, 48, 64, 80, 96, 112];
 
 pub struct Noise {
-    pub clock: usize,
+    // pub clock: usize,
+    counter: usize,
+    clock_shift: u8,
+
     registers: AudioRegisters,
     // length_load: usize,
     // volume: VolumeEnvelope,
@@ -27,7 +30,10 @@ pub struct Noise {
 impl Noise {
     pub fn new() -> Self {
         Self {
-            clock: 0,
+            // clock: 0,
+            counter: 0,
+            clock_shift: 0,
+
             registers: AudioRegisters::default(),
             // length_load: 0,
             // volume: VolumeEnvelope::default(),
@@ -57,25 +63,54 @@ impl Noise {
         }
     }
 
+    // pub fn tick(&mut self, cycles: usize) {
+    //     self.clock += cycles;
+    //     if self.clock >= self.period {
+    //         self.clock -= self.period;
+
+    //         let value = (self.lfsr & 0x1) ^ ((self.lfsr >> 1) & 0x1);
+    //         self.lfsr >>= 1;
+    //         self.lfsr |= value << 14;
+
+    //         if self.width_mode != 0 {
+    //             self.lfsr &= !0x40;
+    //             self.lfsr |= value << 6;
+    //         }
+
+    //         self.output_volume = if (self.lfsr & 0x01) == 0 {
+    //             self.volume
+    //         } else {
+    //             0
+    //         };
+    //     }
+    // }
+
     pub fn tick(&mut self, cycles: usize) {
-        self.clock += cycles;
-        if self.clock >= self.period {
-            self.clock -= self.period;
+        if !self.enabled {
+            return;
+        }
 
-            let value = (self.lfsr & 0x1) ^ ((self.lfsr >> 1) & 0x1);
-            self.lfsr >>= 1;
-            self.lfsr |= value << 14;
+        if self.counter <= cycles {
+            let delta = cycles - self.counter;
 
-            if self.width_mode != 0 {
-                self.lfsr &= !0x40;
-                self.lfsr |= value << 6;
+            self.counter = self.period - delta;
+
+            let xor = (self.lfsr & 0x1) ^ ((self.lfsr >> 1) & 0x1);
+
+            if self.clock_shift < 14 {
+                self.lfsr >>= 1;
+                self.lfsr &= 0x3FFF;
+                self.lfsr |= xor << 14;
+
+                if self.width_mode != 0 {
+                    self.lfsr &= 0x3F;
+                    self.lfsr |= xor << 6;
+                }
             }
 
-            self.output_volume = if (self.lfsr & 0x01) == 0 {
-                self.volume
-            } else {
-                0
-            };
+            self.output_volume = if self.lfsr & 0x1 == 0 { self.volume } else { 0 };
+        } else {
+            self.counter -= cycles;
         }
     }
 
@@ -109,24 +144,6 @@ impl Noise {
         }
     }
 
-    // pub fn volume_tick(&mut self) {
-    //     if self.volume.period == 0 {
-    //         return;
-    //     }
-
-    //     self.volume.clock += 1;
-
-    //     if self.volume.clock >= self.volume.period {
-    //         self.volume.clock -= self.volume.period;
-
-    //         self.volume.volume = match self.volume.direction {
-    //             EnvelopeDirection::Increase if self.volume.volume < 15 => self.volume.volume + 1,
-    //             EnvelopeDirection::Decrease if self.volume.volume > 0 => self.volume.volume - 1,
-    //             _ => self.volume.volume,
-    //         };
-    //     }
-    // }
-
     pub fn length_tick(&mut self) {
         if self.length_enabled && self.length_counter > 0 {
             self.length_counter -= 1;
@@ -154,24 +171,10 @@ impl Noise {
         match addr {
             0xFF1F => self.registers.nrx0 = value,
             0xFF20 => {
-                // self.registers.nrx1 = value;
-                // self.length_load = 64 - (value & 0x3F) as usize;
                 self.registers.nrx1 = value;
                 self.length_counter = 64 - (value & 0x3F) as usize;
             }
             0xFF21 => {
-                // self.registers.nrx2 = value;
-                // // self.dac_enabled = (value & 0xF8) != 0;
-                // self.volume.volume = (value & 0xF0) >> 4;
-                // self.volume.set_direction((value & 0x8) != 0);
-                // self.volume.period = (value & 0x7) as usize;
-
-                // let old_dac_enabled = self.dac_enabled;
-                // self.dac_enabled = (value & 0xF8) != 0;
-                // if old_dac_enabled && !self.dac_enabled {
-                //     self.enabled = false;
-                // }
-
                 self.registers.nrx2 = value;
 
                 self.starting_volume = (value & 0xF0) >> 4;
@@ -186,18 +189,15 @@ impl Noise {
             }
             0xFF22 => {
                 self.registers.nrx3 = value;
-                let shift = (value >> 4) & 0x0F;
+
+                self.clock_shift = value >> 4;
+
                 let divisor_code = value & 0x07;
+
                 self.width_mode = ((value & 0x08) != 0) as u8;
-                self.period = DIVISORS[divisor_code as usize] << shift;
+
+                self.period = DIVISORS[divisor_code as usize] << self.clock_shift;
             }
-            // 0xFF23 => {
-            //     self.registers.nrx4 = value;
-            //     self.length_enabled = (value & 0x40) != 0;
-            //     if (value & 0x80) != 0 {
-            //         self.restart();
-            //     }
-            // }
             _ => (),
         }
     }
@@ -238,7 +238,8 @@ impl Noise {
             self.length_enabled = false;
         }
 
-        self.clock = 0;
+        // self.clock = 0;
+        self.counter = self.period;
 
         // self.volume.clock = 0;
         // self.volume.volume = (self.registers.nrx2 & 0xF0) >> 4;
@@ -252,14 +253,10 @@ impl Noise {
 
         self.volume_auto_update = true;
 
-        self.lfsr = 0xFFFF;
+        self.lfsr = 0x7FFF;
     }
 
     pub fn clear_registers(&mut self) {
-        // self.registers = AudioRegisters {
-        //     nrx1: 0x3F,
-        //     ..AudioRegisters::default()
-        // };
         self.registers = AudioRegisters::default();
     }
 }

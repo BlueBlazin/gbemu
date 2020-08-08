@@ -1,4 +1,3 @@
-use crate::apu::envelope::{EnvelopeDirection, VolumeEnvelope};
 use crate::apu::AudioRegisters;
 
 const DUTY_TABLE: [[bool; 8]; 4] = [
