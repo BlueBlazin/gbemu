@@ -144,8 +144,10 @@ impl WaveChannel {
         }
     }
 
-    pub fn set_nrx4(&mut self, value: u8, counter_wont_clock: bool) {
+    pub fn set_nrx4(&mut self, value: u8, seq_ptr: usize) {
         self.registers.nrx4 = value;
+
+        let counter_wont_clock = seq_ptr % 2 == 1;
 
         self.freq = (self.freq & 0xFF) | ((value as u16 & 0x7) << 8);
 

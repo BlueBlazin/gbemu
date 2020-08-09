@@ -190,9 +190,9 @@ impl SquareWave {
     }
 
     pub fn volume_tick(&mut self) {
-        if !self.enabled || !self.volume_auto_update {
-            return;
-        }
+        // if !self.enabled || !self.volume_auto_update {
+        //     return;
+        // }
 
         self.volume_counter -= 1;
 
@@ -202,17 +202,19 @@ impl SquareWave {
             } else {
                 self.volume_counter = self.volume_period;
 
-                if self.volume_add {
-                    if self.volume < 0xF {
-                        self.volume += 1;
+                if self.volume_auto_update {
+                    if self.volume_add {
+                        if self.volume < 0xF {
+                            self.volume += 1;
+                        } else {
+                            self.volume_auto_update = false;
+                        }
                     } else {
-                        self.volume_auto_update = false;
-                    }
-                } else {
-                    if self.volume > 0 {
-                        self.volume -= 1;
-                    } else {
-                        self.volume_auto_update = false;
+                        if self.volume > 0 {
+                            self.volume -= 1;
+                        } else {
+                            self.volume_auto_update = false;
+                        }
                     }
                 }
             }
@@ -257,6 +259,14 @@ impl SquareWave {
             0xFF12 | 0xFF17 => {
                 self.registers.nrx2 = value;
 
+                if self.volume_period == 0 && self.volume_auto_update {
+                    self.volume = (self.volume + 1) & 0xF;
+                }
+
+                if self.volume_add != ((value & 0x8) != 0) {
+                    self.volume = (16 - self.volume) & 0xF;
+                }
+
                 self.starting_volume = (value & 0xF0) >> 4;
                 self.volume_add = (value & 0x8) != 0;
                 self.volume_period = (value & 0x7) as usize;
@@ -274,7 +284,7 @@ impl SquareWave {
         }
     }
 
-    pub fn set_nrx4(&mut self, value: u8, counter_wont_clock: bool) {
+    pub fn set_nrx4(&mut self, value: u8, seq_ptr: usize) {
         self.registers.nrx4 = value;
 
         let trigger = (value & 0x80) != 0;
@@ -283,7 +293,7 @@ impl SquareWave {
             self.trigger();
         }
 
-        if counter_wont_clock
+        if seq_ptr % 2 == 1
             && !self.length.enabled
             && (value & 0x40) != 0
             && self.length.counter > 0
@@ -297,6 +307,10 @@ impl SquareWave {
                     self.enabled = false;
                 }
             }
+        }
+
+        if seq_ptr == 7 && trigger {
+            self.volume_counter += 1;
         }
 
         self.length.enabled = (value & 0x40) != 0;

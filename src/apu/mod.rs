@@ -8,6 +8,7 @@ use crate::apu::noise::Noise;
 use crate::apu::queue::AudioQueue;
 use crate::apu::square::SquareWave;
 use crate::apu::wave::WaveChannel;
+use crate::cpu::EmulationMode;
 
 const SAMPLE_RATE: usize = 95;
 const SEQUENCER_PERIOD: usize = 8192;
@@ -51,10 +52,11 @@ pub struct Apu {
     master_vol_right: f32,
     nr50: u8,
     nr51: u8,
+    mode: EmulationMode,
 }
 
 impl Apu {
-    pub fn new() -> Self {
+    pub fn new(mode: EmulationMode) -> Self {
         Apu {
             clocks: 0,
             sample_clocks: 0,
@@ -70,6 +72,7 @@ impl Apu {
             master_vol_right: 1.0,
             nr50: 0,
             nr51: 0,
+            mode,
         }
     }
 
@@ -210,13 +213,13 @@ impl Apu {
     pub fn set_byte(&mut self, addr: u16, value: u8) {
         match addr {
             0xFF10..=0xFF13 if self.master_on => self.channel1.set_byte(addr, value),
-            0xFF14 if self.master_on => self.channel1.set_nrx4(value, self.seq_ptr % 2 != 0),
+            0xFF14 if self.master_on => self.channel1.set_nrx4(value, self.seq_ptr),
             0xFF15..=0xFF18 if self.master_on => self.channel2.set_byte(addr, value),
-            0xFF19 if self.master_on => self.channel2.set_nrx4(value, self.seq_ptr % 2 != 0),
+            0xFF19 if self.master_on => self.channel2.set_nrx4(value, self.seq_ptr),
             0xFF1A..=0xFF1D if self.master_on => self.channel3.set_byte(addr, value),
-            0xFF1E if self.master_on => self.channel3.set_nrx4(value, self.seq_ptr % 2 != 0),
+            0xFF1E if self.master_on => self.channel3.set_nrx4(value, self.seq_ptr),
             0xFF1F..=0xFF22 if self.master_on => self.channel4.set_byte(addr, value),
-            0xFF23 if self.master_on => self.channel4.set_nrx4(value, self.seq_ptr % 2 != 0),
+            0xFF23 if self.master_on => self.channel4.set_nrx4(value, self.seq_ptr),
             NR50 if self.master_on => {
                 self.master_vol_left = (((value & 0x70) >> 4) as f32) / 7.0;
                 self.master_vol_right = ((value & 0x07) as f32) / 7.0;
@@ -228,10 +231,12 @@ impl Apu {
 
                 self.master_on = (value & 0x80) != 0;
 
+                // Power off
                 if old_master_on && !self.master_on {
                     self.clear_registers();
                 }
 
+                // Power on
                 if !old_master_on && self.master_on {
                     self.seq_ptr = 0;
                     self.channel1.timer.step = 0;
@@ -245,8 +250,6 @@ impl Apu {
     }
 
     fn clear_registers(&mut self) {
-        // self.nr50 = 0x0;
-        // self.nr51 = 0x0;
         self.master_on = true;
 
         for addr in 0xFF10..=0xFF25 {
@@ -254,10 +257,6 @@ impl Apu {
         }
 
         self.master_on = false;
-        // self.channel1.clear_registers();
-        // self.channel2.clear_registers();
-        // self.channel3.clear_registers();
-        // self.channel4.clear_registers();
     }
 
     pub fn get_next_buffer(&mut self) -> (Option<Vec<f32>>, Option<Vec<f32>>) {
@@ -270,7 +269,7 @@ mod tests {
     use super::*;
 
     fn test_registers_with(d: u8) {
-        let mut apu = Apu::new();
+        let mut apu = Apu::new(EmulationMode::Cgb);
         apu.set_byte(NR50, 0x77);
 
         let targets = [

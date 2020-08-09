@@ -96,7 +96,7 @@ impl Mmu {
             cartridge: Cartridge::new(data),
             gpu: Gpu::new(emu_mode.clone()),
             joypad: Joypad::new(),
-            apu: Apu::new(),
+            apu: Apu::new(emu_mode.clone()),
             ie: 0,
             hdma: Hdma::default(),
             oam_dma: OamDma::default(),
