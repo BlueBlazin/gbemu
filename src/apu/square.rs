@@ -66,7 +66,11 @@ impl Default for LengthCounter {
 pub struct SquareWave {
     pub output_volume: u8,
     registers: AudioRegisters,
-    pub timer: Timer,
+    // pub timer: Timer,
+    counter: usize,
+    duty: usize,
+    pub step: usize,
+    // period: usize,
     length: LengthCounter,
     // volume: VolumeEnvelope,
     pub enabled: bool,
@@ -93,7 +97,11 @@ impl SquareWave {
         SquareWave {
             output_volume: 0,
             registers: AudioRegisters::default(),
-            timer: Timer::default(),
+            // timer: Timer::default(),
+            counter: 0,
+            duty: 0,
+            step: 0,
+            // period: 0,
             length: LengthCounter::default(),
             // volume: VolumeEnvelope::default(),
             enabled: false,
@@ -124,14 +132,34 @@ impl SquareWave {
         }
     }
 
-    pub fn tick(&mut self, cycles: usize) {
-        self.timer.tick(cycles);
+    // pub fn tick(&mut self, cycles: usize) {
+    //     self.timer.tick(cycles);
 
-        self.output_volume = if self.enabled && DUTY_TABLE[self.timer.duty][self.timer.step] {
-            self.volume
+    //     self.output_volume = if self.enabled && DUTY_TABLE[self.timer.duty][self.timer.step] {
+    //         self.volume
+    //     } else {
+    //         0
+    //     };
+    // }
+
+    pub fn tick(&mut self, cycles: usize) {
+        if self.counter <= cycles {
+            let delta = cycles - self.counter;
+
+            let freq = (self.registers.nrx4 as u16 & 0x7) << 8 | self.registers.nrx3 as u16;
+            self.counter = ((2048 - freq) * 4) as usize;
+            self.counter -= delta;
+
+            self.step = (self.step + 1) % 8;
+
+            self.output_volume = if DUTY_TABLE[self.duty][self.step] {
+                self.volume
+            } else {
+                0
+            };
         } else {
-            0
-        };
+            self.counter -= cycles;
+        }
     }
 
     pub fn sweep_tick(&mut self) {
@@ -154,7 +182,6 @@ impl SquareWave {
                         self.shadow_freq = freq;
                         self.registers.nrx3 = freq as u8;
                         self.registers.nrx4 |= (freq >> 8) as u8;
-                        self.timer.set_period(self.shadow_freq);
                     }
 
                     self.freq_calc_and_overflow_check();
@@ -253,7 +280,7 @@ impl SquareWave {
             0xFF11 | 0xFF16 => {
                 self.registers.nrx1 = value;
 
-                self.timer.duty = ((value & 0xC0) >> 6) as usize;
+                self.duty = ((value & 0xC0) >> 6) as usize;
                 self.length.counter = 64 - (value & 0x3F) as usize;
             }
             0xFF12 | 0xFF17 => {
@@ -326,7 +353,8 @@ impl SquareWave {
 
         self.shadow_freq = (self.registers.nrx4 as u16 & 0x7) << 8 | self.registers.nrx3 as u16;
 
-        self.timer.set_period(self.shadow_freq);
+        let freq = (self.registers.nrx4 as u16 & 0x7) << 8 | self.registers.nrx3 as u16;
+        self.counter = ((2048 - freq) * 4) as usize;
 
         self.sweep_counter = self.sweep_period as usize;
 

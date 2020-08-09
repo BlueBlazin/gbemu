@@ -140,19 +140,6 @@ impl Apu {
                 }
                 self.seq_ptr = (self.seq_ptr + 1) % 8;
             }
-
-            // self.channel1.tick(1);
-            // self.channel2.tick(1);
-            // self.channel3.tick(1);
-            // self.channel4.tick(1);
-
-            // if self.sample_clocks >= SAMPLE_RATE {
-            //     self.sample_clocks -= SAMPLE_RATE;
-            //     let left = self.audio_out_left();
-            //     let right = self.audio_out_right();
-            //     self.samples.push(left, right);
-            //     self.i += 1;
-            // }
         }
     }
 
@@ -239,8 +226,8 @@ impl Apu {
                 // Power on
                 if !old_master_on && self.master_on {
                     self.seq_ptr = 0;
-                    self.channel1.timer.step = 0;
-                    self.channel2.timer.step = 0;
+                    self.channel1.step = 0;
+                    self.channel2.step = 0;
                     self.channel3.sample = 0;
                 }
             }
