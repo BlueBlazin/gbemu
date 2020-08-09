@@ -179,35 +179,6 @@ impl Cpu {
         Event::MaxCycles
     }
 
-    // pub fn run_till_event(&mut self, max_cycles: usize) -> Event {
-    //     let max_cycles = match self.mmu.cgb_mode.speed {
-    //         CgbSpeed::Normal => max_cycles,
-    //         CgbSpeed::Double => max_cycles * 2,
-    //     };
-
-    //     while self.audio_flag {
-    //         self.event_cycles += self.tick();
-
-    //         if self.mmu.gpu.vblank_event {
-    //             self.mmu.gpu.vblank_event = false;
-    //             return Event::VBlank;
-    //         }
-
-    //         if let (Some(left), Some(right)) = self.mmu.apu.get_next_buffer() {
-    //             self.audio_flag = false;
-    //             return Event::AudioBufferFull(left, right);
-    //         }
-    //     }
-
-    //     while self.event_cycles < max_cycles {
-    //         self.event_cycles += self.tick();
-    //     }
-
-    //     self.event_cycles -= max_cycles;
-    //     self.audio_flag = true;
-    //     Event::MaxCycles
-    // }
-
     pub fn frame(&mut self) {
         let mut cycles = 0;
         while cycles < MAX_CYCLES {
@@ -225,12 +196,6 @@ impl Cpu {
         if self.halted {
             return self.halt_tick();
         }
-
-        // match self.mmu.hdma.hdma_type {
-        //     HdmaType::GPDma => self.gdma_tick(),
-        //     HdmaType::HBlankDma if self.mmu.in_hblank() => self.hdma_tick(),
-        //     _ => self.cpu_tick(),
-        // }
 
         match self.mmu.hdma.hdma_type {
             HdmaType::GPDma => self.gdma_tick(),
@@ -313,22 +278,6 @@ impl Cpu {
         self.cycles
     }
 
-    // fn gdma_tick(&mut self) {
-    //     // self.cycles += 4;
-    //     let cycles = self.mmu.gdma_tick();
-    //     self.add_cycles(cycles);
-    // }
-
-    // fn hdma_tick(&mut self) {
-    //     if self.mmu.hdma.new_hdma {
-    //         self.mmu.hdma.new_hdma = false;
-    //         // self.cycles += 4;
-    //         self.add_cycles(4);
-    //     }
-    //     let cycles = self.mmu.hdma_tick();
-    //     self.add_cycles(cycles);
-    // }
-
     fn gdma_tick(&mut self) {
         self.mmu.gdma_tick();
 
@@ -410,14 +359,6 @@ impl Cpu {
     }
 
     pub fn simulate_bootrom(&mut self) {
-        // match self.emu_mode {
-        //     EmulationMode::Dmg => self.set_r16(R16::AF, 0x01B0),
-        //     EmulationMode::Cgb => self.set_r16(R16::AF, 0x11B0),
-        // }
-        // self.set_r16(R16::BC, 0x0013);
-        // self.set_r16(R16::DE, 0x00D8);
-        // self.set_r16(R16::HL, 0x014D);
-        // self.set_r16(R16::SP, 0xFFFE);
         match self.emu_mode {
             EmulationMode::Dmg => {
                 // AF = 0x01B0
@@ -492,23 +433,11 @@ impl Cpu {
     //  Restarts & Returns
     // -------------------------------------------------------------
 
-    // pub fn rst(&mut self, value: u8) {
-    //     let ms = ((self.pc & 0xFF00) >> 8) as u8;
-    //     let ls = (self.pc & 0x00FF) as u8;
-    //     self.push(ms);
-    //     self.push(ls);
-    //     self.jp_addr(value as u16);
-    // }
     pub fn rst(&mut self, value: u8) {
         self.add_cycles(4);
         self.call_addr(value as u16);
     }
 
-    // pub fn ret(&mut self) {
-    //     let ls = self.pop() as u16;
-    //     let ms = self.pop() as u16;
-    //     self.jp_addr((ms << 8) | ls);
-    // }
     pub fn ret(&mut self) {
         self.pc = self.pop() as u16;
         self.pc |= (self.pop() as u16) << 8;
@@ -522,10 +451,6 @@ impl Cpu {
         }
     }
 
-    // pub fn reti(&mut self) {
-    //     self.ime = true;
-    //     self.ret();
-    // }
     pub fn reti(&mut self) {
         self.ime = true;
         self.ret();
@@ -535,35 +460,18 @@ impl Cpu {
     //  Calls
     // -------------------------------------------------------------
 
-    // pub fn call_addr(&mut self, addr: u16) {
-    //     let ms = ((self.pc & 0xFF00) >> 8) as u8;
-    //     let ls = (self.pc & 0x00FF) as u8;
-    //     self.push(ms);
-    //     self.push(ls);
-    //     self.jp_addr(addr);
-    // }
     pub fn call_addr(&mut self, addr: u16) {
         self.push((self.pc >> 8) as u8);
         self.push((self.pc & 0xFF) as u8);
         self.pc = addr as u16;
     }
 
-    // pub fn call(&mut self) {
-    //     let addr = self.get_imm16();
-    //     self.call_addr(addr);
-    // }
     pub fn call(&mut self) {
         let addr = self.get_imm16();
         self.add_cycles(4);
         self.call_addr(addr);
     }
 
-    // pub fn call_cc_nn(&mut self, flag: Flag, set: bool) {
-    //     let addr = self.get_imm16();
-    //     if self.get_flag(flag) == set as u8 {
-    //         self.call_addr(addr);
-    //     }
-    // }
     pub fn call_cc_nn(&mut self, flag: Flag, set: bool) {
         let addr = self.get_imm16();
         if self.get_flag(flag) == set as u8 {
@@ -576,29 +484,11 @@ impl Cpu {
     //  Jumps
     // -------------------------------------------------------------
 
-    // #[inline]
-    // pub fn jp_addr(&mut self, addr: u16) {
-    //     self.add_cycles(4);
-    //     self.pc = addr;
-    // }
-
-    // pub fn jp_nn(&mut self) {
-    //     let addr = self.get_imm16();
-    //     self.jp_addr(addr);
-    // }
     pub fn jp_nn(&mut self) {
-        // self.pc = self.get_imm8() as u16;
-        // self.pc |= (self.get_imm8() as u16) << 8;
         self.pc = self.get_imm16();
         self.add_cycles(4);
     }
 
-    // pub fn jp_cc_nn(&mut self, flag: Flag, set: bool) {
-    //     let addr = self.get_imm16();
-    //     if self.get_flag(flag) == set as u8 {
-    //         self.jp_addr(addr);
-    //     }
-    // }
     pub fn jp_cc_nn(&mut self, flag: Flag, set: bool) {
         let addr = self.get_imm16();
         if self.get_flag(flag) == set as u8 {
@@ -607,24 +497,12 @@ impl Cpu {
         }
     }
 
-    // pub fn jr_n(&mut self) {
-    //     let n = self.get_imm8();
-    //     let addr = self.pc.wrapping_add(n as i8 as i16 as u16);
-    //     self.jp_addr(addr);
-    // }
     pub fn jr_n(&mut self) {
         let n = self.get_imm8();
         self.add_cycles(4);
         self.pc = self.pc.wrapping_add(n as i8 as i16 as u16);
     }
 
-    // pub fn jr_cc_n(&mut self, flag: Flag, set: bool) {
-    //     let n = self.get_imm8();
-    //     if self.get_flag(flag) == set as u8 {
-    //         let addr = self.pc.wrapping_add(n as i8 as i16 as u16);
-    //         self.jp_addr(addr);
-    //     }
-    // }
     pub fn jr_cc_n(&mut self, flag: Flag, set: bool) {
         let n = self.get_imm8();
         if self.get_flag(flag) == set as u8 {
@@ -637,7 +515,6 @@ impl Cpu {
     //  Bit Operations
     // -------------------------------------------------------------
 
-    /// Test bit `b` in `value`.
     pub fn bit_value(&mut self, b: u8, value: u8) {
         self.setc_flag(Flag::Z, (value & (0x1 << b)) == 0);
         self.reset_flag(Flag::N);
@@ -915,14 +792,12 @@ impl Cpu {
 
     pub fn nop(&mut self) {}
 
-    /// Set carry flag.
     pub fn scf(&mut self) {
         self.reset_flag(Flag::N);
         self.reset_flag(Flag::H);
         self.set_flag(Flag::C);
     }
 
-    /// Complement carry flag.
     pub fn ccf(&mut self) {
         let c = self.get_flag(Flag::C);
         self.reset_flag(Flag::N);
@@ -934,7 +809,6 @@ impl Cpu {
         }
     }
 
-    /// Complement register A.
     pub fn cpl(&mut self) {
         let value = self.get_r8(&R8::A);
         self.set_flag(Flag::N);
@@ -1534,87 +1408,15 @@ mod tests {
 
     #[test]
     fn test_blargg() {
-        // let rom = fs::read("roms/instr_timing.gb").unwrap();
-        // let rom = fs::read("roms/acceptance/ei_timing.gb").unwrap();
-        // let rom = fs::read("roms/interrupt_time.gb").unwrap();
-        // let rom = fs::read("roms/Shantae (USA).gbc").unwrap();
-        // let rom = fs::read("roms/01-registers.gb").unwrap();
-        // let rom = fs::read("roms/11-regs after power.gb").unwrap();
-        let rom = fs::read("roms/cgb_sound (2).gb").unwrap();
-        // let rom = fs::read("roms/Aladdin (USA).gbc").unwrap();
-        // let rom = fs::read("roms/dmg-acid2.gb").unwrap();
-        // let rom = fs::read("roms/cgb-acid2.gbc").unwrap();
-        // let rom = fs::read("roms/Pokemon Pinball (U) (C).gbc").unwrap();
-        // let rom = fs::read("roms/Tetris.gb").unwrap();
-        // let rom = fs::read("roms/Dr. Mario (World).gb").unwrap();
-        // let rom = fs::read("roms/intr_2_mode3_timing.gb").unwrap();
-        // let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
-        // let rom = fs::read("roms/Super Mario Land 2 - 6 Golden Coins (UE) (V1.2) [!].gb").unwrap();
-        // let rom = fs::read("roms/bits_mode.gb").unwrap();
-        // let rom = fs::read("roms/unused_hwio-GS.gb").unwrap();
-        // let rom = fs::read("roms/sources-GS.gb").unwrap();
-        // let rom = fs::read("roms/rst_timing.gb").unwrap();
-        // let rom = fs::read("roms/bits_mode.gb").unwrap();
-        // let rom = fs::read("roms/Aladdin (U) [S][!].gb").unwrap();
-        // let rom = fs::read("roms/Prehistorik Man (USA, Europe).gb").unwrap();
-        println!("{:#X}", rom[0x147]);
+        let rom = fs::read("roms/<example_rom>").unwrap();
+
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
-        println!("Starting");
 
-        // let mut i = 1;
+        println!("Starting");
 
         loop {
             cpu.tick();
-
-            // if i % 10 == 0 {
-            //     cpu.mmu.joypad.press_key(Key::Start);
-            // } else if i % 10 == 1 {
-            //     cpu.mmu.joypad.release_key(Key::Start);
-            // }
         }
-    }
-
-    fn print_and_step(cpu: &mut Cpu) {
-        println!(
-            "pc: {:#X}, opcode: {:#X}, halted: {}",
-            cpu.pc,
-            cpu.mmu.get_byte(cpu.pc),
-            cpu.halted,
-        );
-
-        cpu.tick();
-    }
-
-    #[test]
-    fn test_steps() {
-        let rom = fs::read("roms/Pinball Deluxe (U).gb").unwrap();
-        let mut cpu = Cpu::new(rom);
-        cpu.simulate_bootrom();
-        println!("Starting");
-
-        // while cpu.pc != 0x17A {
-        //     cpu.tick();
-        // }
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
-        print_and_step(&mut cpu);
     }
 }

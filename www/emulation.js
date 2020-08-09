@@ -41,32 +41,7 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 export class Emulation {
   start(romData) {
-    console.log(romData.length);
     this.gb = Emulator.new(romData);
-    // this.screenPtr = this.gb.screen();
-
-    // this.screen = new Uint8ClampedArray(
-    //   memory.buffer,
-    //   this.screenPtr,
-    //   WIDTH * HEIGHT * CHANNELS
-    // );
-
-    // this.imageData = ctx.createImageData(WIDTH, HEIGHT);
-
-    // this.audioLeftPtr = this.gb.audio_buffer_left();
-    // this.audioRightPtr = this.gb.audio_buffer_right();
-
-    // this.leftBuffer = new Float32Array(
-    //   memory.buffer,
-    //   this.audioLeftPtr,
-    //   AUDIO_BUFFER_SIZE
-    // );
-
-    // this.rightBuffer = new Float32Array(
-    //   memory.buffer,
-    //   this.audioRightPtr,
-    //   AUDIO_BUFFER_SIZE
-    // );
 
     this.registerKeydownHandler();
     this.registerKeyupHandler();
@@ -126,32 +101,10 @@ export class Emulation {
   }
 
   drawScreen() {
-    // const screen = new Uint8ClampedArray(
-    //   memory.buffer,
-    //   this.screenPtr,
-    //   WIDTH * HEIGHT * CHANNELS
-    // );
-
-    // const image = new ImageData(screen, WIDTH, HEIGHT);
-
-    // const image = new ImageData(this.screen, WIDTH, HEIGHT);
-    // ctx.putImageData(image, 0, 0, 0, 0, WIDTH, HEIGHT);
-
     ctx.putImageData(this.imageData, 0, 0, 0, 0, WIDTH, HEIGHT);
   }
 
   playAudio() {
-    // const leftBuffer = new Float32Array(
-    //   memory.buffer,
-    //   this.audioLeftPtr,
-    //   AUDIO_BUFFER_SIZE
-    // );
-
-    // const rightBuffer = new Float32Array(
-    //   memory.buffer,
-    //   this.audioRightPtr,
-    //   AUDIO_BUFFER_SIZE
-    // );
     const now = audioCtx.currentTime;
 
     if (!this.audioLeftPtr) {

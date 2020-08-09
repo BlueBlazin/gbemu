@@ -1,4 +1,3 @@
-pub mod envelope;
 pub mod noise;
 pub mod queue;
 pub mod square;
@@ -80,13 +79,6 @@ impl Apu {
         for _ in 0..cycles {
             self.clocks += 1;
             self.sample_clocks += 1;
-
-            // if self.master_on {
-            //     self.channel1.tick(1);
-            //     self.channel2.tick(1);
-            //     self.channel3.tick(1);
-            //     self.channel4.tick(1);
-            // }
 
             self.channel1.tick(1);
             self.channel2.tick(1);

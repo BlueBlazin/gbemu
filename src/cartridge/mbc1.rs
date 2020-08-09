@@ -66,14 +66,9 @@ impl Mbc for Mbc1 {
             },
             0x4000..=0x7FFF => {
                 let bank = (self.bank2 << 5) | self.bank1;
-                // let old_addr = addr;
+
                 let addr = bank as usize * ROM_BANK_SIZE + (addr as usize - ROM_OFFSET);
-                // if addr >= self.rom.len() {
-                //     println!(
-                //         "\nlogical_addr: {}, addr: {:#X}, bank1: {:#X}, bank2: {:#X}\n",
-                //         old_addr, addr, self.bank1, self.bank2
-                //     );
-                // }
+
                 self.rom[addr % self.size]
             }
             0xA000..=0xBFFF => {

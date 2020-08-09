@@ -4,8 +4,6 @@ pub struct WaveChannel {
     pub table: [u8; 32],
     wave_ram: [u8; 16],
     pub freq: u16,
-    // pub period: usize,
-    // pub clock: usize,
     pub i: usize,
     pub enabled: bool,
     pub sample: u8,
@@ -29,8 +27,6 @@ impl WaveChannel {
                 0x00, 0xFF,
             ],
             freq: 0,
-            // period: 0,
-            // clock: 0,
             i: 0,
             enabled: false,
             sample: 0,
@@ -183,18 +179,13 @@ impl WaveChannel {
     pub fn trigger(&mut self) {
         self.enabled = true;
 
-        // self.period = ((2048 - self.freq) * 2) as usize;
-
         if self.length_counter == 0 {
             self.length_counter = 256;
             self.length_enabled = false;
         }
 
-        // let high_nibble = self.i - (self.i % 2);
-        // self.sample = self.table[high_nibble];
-
         self.i = 0;
-        // self.clock = 0;
+
         self.counter = ((2048 - self.freq) * 2) as usize;
         self.counter += 6;
 

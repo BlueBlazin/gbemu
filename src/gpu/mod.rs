@@ -687,13 +687,6 @@ impl Gpu {
                         bg_over_sprite |= spx.obj_to_bg_prio;
                     }
 
-                    // if draw_sprite {
-                    //     println!(
-                    //         "bg_to_oam: {:08b}, obj_to_bg: {:08b}, lcdc0: {:08b}, lx: {}, bg_over_sprite: {:08b}",
-                    //         bg_over_sprite, spx.obj_to_bg_prio, self.lcdc.lcdc0, self.lx, bg_over_sprite,
-                    //     );
-                    // }
-
                     spx
                 }
                 None => PixelFifoItem::default(),
@@ -724,13 +717,6 @@ impl Gpu {
 
             if draw_sprite {
                 value = spx.value;
-
-                // if spx.value > 0 && !draw_sprite {
-                //     println!(
-                //         "bg_to_oam: {:08b}, obj_to_bg: {:08b}, lcdc0: {:08b}, lx: {}, bg_over_sprite: {:08b}, obj_display_enable: {:08b}",
-                //         bg_over_sprite, spx.obj_to_bg_prio, self.lcdc.lcdc0, self.lx, bg_over_sprite, self.lcdc.obj_display_enable,
-                //     );
-                // }
 
                 palette = match self.emu_mode {
                     EmulationMode::Dmg => {

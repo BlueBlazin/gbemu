@@ -116,12 +116,10 @@ impl Mmu {
             EmulationMode::Dmg => {
                 self.set_byte(0xFF70, 0xFF);
                 self.set_byte(0xFF4F, 0xFF);
-                // self.set_byte(0xFF4D, 0xFF);
             }
             EmulationMode::Cgb => {
                 self.set_byte(0xFF70, 0xF8);
                 self.set_byte(0xFF4F, 0xFE);
-                // self.set_byte(0xFF4D, 0x7E);
 
                 self.set_byte(0xFF6C, 0xFE);
                 self.set_byte(0xFF75, 0x8F);
@@ -131,27 +129,6 @@ impl Mmu {
         self.set_byte(0xFF0F, 0xE1);
         self.set_byte(0xFFFF, 0);
     }
-
-    // pub fn in_hblank(&self) -> bool {
-    //     self.gpu.mode() == &GpuMode::HBlank
-    // }
-
-    // pub fn gdma_tick(&mut self) -> usize {
-    //     let blocks = self.hdma.blocks as usize;
-    //     while self.hdma.blocks > 0 {
-    //         self.hdma_transfer_block();
-    //     }
-    //     self.hdma.hdma_type = HdmaType::NoHdma;
-    //     blocks * 32
-    // }
-
-    // pub fn hdma_tick(&mut self) -> usize {
-    //     self.hdma_transfer_block();
-    //     if self.hdma.blocks == 0 {
-    //         self.hdma.hdma_type = HdmaType::NoHdma;
-    //     }
-    //     32
-    // }
 
     pub fn gdma_tick(&mut self) {
         self.hdma_transfer_block();

@@ -3,13 +3,10 @@ use crate::apu::AudioRegisters;
 const DIVISORS: [usize; 8] = [8, 16, 32, 48, 64, 80, 96, 112];
 
 pub struct Noise {
-    // pub clock: usize,
     counter: usize,
     clock_shift: u8,
 
     registers: AudioRegisters,
-    // length_load: usize,
-    // volume: VolumeEnvelope,
     dac_enabled: bool,
     length_enabled: bool,
     period: usize,
@@ -30,13 +27,10 @@ pub struct Noise {
 impl Noise {
     pub fn new() -> Self {
         Self {
-            // clock: 0,
             counter: 0,
             clock_shift: 0,
 
             registers: AudioRegisters::default(),
-            // length_load: 0,
-            // volume: VolumeEnvelope::default(),
             dac_enabled: false,
             length_enabled: false,
             period: 0,
@@ -62,28 +56,6 @@ impl Noise {
             0.0
         }
     }
-
-    // pub fn tick(&mut self, cycles: usize) {
-    //     self.clock += cycles;
-    //     if self.clock >= self.period {
-    //         self.clock -= self.period;
-
-    //         let value = (self.lfsr & 0x1) ^ ((self.lfsr >> 1) & 0x1);
-    //         self.lfsr >>= 1;
-    //         self.lfsr |= value << 14;
-
-    //         if self.width_mode != 0 {
-    //             self.lfsr &= !0x40;
-    //             self.lfsr |= value << 6;
-    //         }
-
-    //         self.output_volume = if (self.lfsr & 0x01) == 0 {
-    //             self.volume
-    //         } else {
-    //             0
-    //         };
-    //     }
-    // }
 
     pub fn tick(&mut self, cycles: usize) {
         if !self.enabled {
@@ -114,35 +86,6 @@ impl Noise {
         }
     }
 
-    // pub fn volume_tick(&mut self) {
-    //     if !self.enabled || !self.volume_auto_update {
-    //         return;
-    //     }
-
-    //     self.volume_counter -= 1;
-
-    //     if self.volume_counter == 0 {
-    //         if self.volume_period == 0 {
-    //             self.volume_counter = 8;
-    //         } else {
-    //             self.volume_counter = self.volume_period;
-
-    //             if self.volume_add {
-    //                 if self.volume < 0xF {
-    //                     self.volume += 1;
-    //                 } else {
-    //                     self.volume_auto_update = false;
-    //                 }
-    //             } else {
-    //                 if self.volume > 0 {
-    //                     self.volume -= 1;
-    //                 } else {
-    //                     self.volume_auto_update = false;
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
     pub fn volume_tick(&mut self) {
         self.volume_counter -= 1;
 
@@ -176,8 +119,6 @@ impl Noise {
             self.length_counter -= 1;
             if self.length_counter == 0 {
                 self.enabled = false;
-                // self.length_enabled = false;
-                // self.registers.nrx4 &= !0x40;
             }
         }
     }
@@ -185,7 +126,6 @@ impl Noise {
     pub fn get_byte(&mut self, addr: u16) -> u8 {
         match addr {
             0xFF1F => 0xFF,
-            // 0xFF20 => 0xC0 | self.registers.nrx1,
             0xFF20 => 0xFF,
             0xFF21 => self.registers.nrx2,
             0xFF22 => self.registers.nrx3,
@@ -279,11 +219,8 @@ impl Noise {
             self.length_enabled = false;
         }
 
-        // self.clock = 0;
         self.counter = self.period;
 
-        // self.volume.clock = 0;
-        // self.volume.volume = (self.registers.nrx2 & 0xF0) >> 4;
         self.volume = self.starting_volume;
 
         self.volume_counter = self.volume_period;

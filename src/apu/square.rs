@@ -7,46 +7,6 @@ const DUTY_TABLE: [[bool; 8]; 4] = [
     [false, true, true, true, true, true, true, false],
 ];
 
-pub struct Timer {
-    pub clock: usize,
-    pub period: usize,
-    pub duty: usize,
-    pub step: usize,
-}
-
-impl Default for Timer {
-    fn default() -> Self {
-        Timer {
-            clock: 0,
-            period: 0,
-            duty: 0,
-            step: 0,
-        }
-    }
-}
-
-impl Timer {
-    pub fn set_period(&mut self, freq: u16) {
-        self.clock = 0;
-        self.period = ((2048 - freq) * 4) as usize;
-    }
-
-    pub fn tick(&mut self, cycles: usize) {
-        if self.period == 0 {
-            return;
-        }
-
-        self.clock += cycles;
-
-        if self.clock >= self.period {
-            self.clock -= self.period;
-            self.step = (self.step + 1) % 8;
-        }
-    }
-}
-
-// ----------------------------------------------------------------------------------------------------
-
 pub struct LengthCounter {
     pub counter: usize,
     pub enabled: bool,
@@ -66,13 +26,12 @@ impl Default for LengthCounter {
 pub struct SquareWave {
     pub output_volume: u8,
     registers: AudioRegisters,
-    // pub timer: Timer,
     counter: usize,
     duty: usize,
     pub step: usize,
-    // period: usize,
+
     length: LengthCounter,
-    // volume: VolumeEnvelope,
+
     pub enabled: bool,
     dac_enabled: bool,
 
@@ -97,13 +56,13 @@ impl SquareWave {
         SquareWave {
             output_volume: 0,
             registers: AudioRegisters::default(),
-            // timer: Timer::default(),
+
             counter: 0,
             duty: 0,
             step: 0,
-            // period: 0,
+
             length: LengthCounter::default(),
-            // volume: VolumeEnvelope::default(),
+
             enabled: false,
             dac_enabled: false,
 
@@ -131,16 +90,6 @@ impl SquareWave {
             0.0
         }
     }
-
-    // pub fn tick(&mut self, cycles: usize) {
-    //     self.timer.tick(cycles);
-
-    //     self.output_volume = if self.enabled && DUTY_TABLE[self.timer.duty][self.timer.step] {
-    //         self.volume
-    //     } else {
-    //         0
-    //     };
-    // }
 
     pub fn tick(&mut self, cycles: usize) {
         if self.counter <= cycles {
@@ -217,10 +166,6 @@ impl SquareWave {
     }
 
     pub fn volume_tick(&mut self) {
-        // if !self.enabled || !self.volume_auto_update {
-        //     return;
-        // }
-
         self.volume_counter -= 1;
 
         if self.volume_counter == 0 {
@@ -386,7 +331,6 @@ impl SquareWave {
     }
 
     pub fn clear_registers(&mut self) {
-        // self.registers = AudioRegisters::default();
         self.registers.nrx0 = 0;
         self.registers.nrx1 = 0;
         self.registers.nrx2 = 0;
