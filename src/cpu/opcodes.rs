@@ -738,7 +738,7 @@ impl Cpu {
 			}
 			0x10 => {
 				self.stop();
-				self.fetch();
+				// self.fetch();
 			}
 			0xF3 => {
 				self.di();

@@ -1,6 +1,6 @@
 # SameBoy Pixel Pipeline
 
-## The First Perspective
+My notes on SameBoy's pixel FIFO.
 
 ### The simplest case - No window, no sprites, no scroll
 
