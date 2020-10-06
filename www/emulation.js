@@ -48,18 +48,14 @@ export class Emulation {
 
     this.lastCallTime = null;
 
+    this.imageData = ctx.createImageData(WIDTH, HEIGHT);
+
     this.emulationDriver();
   }
 
   emulationDriver() {
-    // const timeMs = performance.now();
     setTimeout(this.emulationDriver.bind(this), 1000 / 60);
 
-    // const time = timeMs / 1000;
-    // const diff = Math.max(time - (this.lastCallTime || time), 0);
-    // this.lastCallTime = time;
-
-    // const maxCycles = Math.floor(MAX_CYCLES * (1.0 + diff));
     const maxCycles = Math.floor(MAX_CYCLES);
 
     this.runTill(maxCycles);
@@ -74,7 +70,7 @@ export class Emulation {
       event = this.gb.run_till_event(maxCycles);
 
       if (event == EVENT_VBLANK) {
-        if (this.screenPtr !== this.gb.screen()) {
+        if (!this.screenPtr) {
           this.screenPtr = this.gb.screen();
 
           this.screen = new Uint8ClampedArray(
@@ -82,19 +78,7 @@ export class Emulation {
             this.screenPtr,
             WIDTH * HEIGHT * CHANNELS
           );
-
-          this.imageData = ctx.createImageData(WIDTH, HEIGHT);
         }
-
-        // this.screenPtr = this.gb.screen();
-
-        // this.screen = new Uint8ClampedArray(
-        //   memory.buffer,
-        //   this.screenPtr,
-        //   WIDTH * HEIGHT * CHANNELS
-        // );
-
-        // this.imageData = ctx.createImageData(WIDTH, HEIGHT);
 
         this.imageData.data.set(this.screen);
       }
