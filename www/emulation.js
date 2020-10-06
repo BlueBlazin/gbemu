@@ -52,12 +52,12 @@ export class Emulation {
   }
 
   emulationDriver() {
-    const timeMs = performance.now();
+    // const timeMs = performance.now();
     setTimeout(this.emulationDriver.bind(this), 1000 / 60);
 
-    const time = timeMs / 1000;
-    const diff = Math.max(time - (this.lastCallTime || time), 0);
-    this.lastCallTime = time;
+    // const time = timeMs / 1000;
+    // const diff = Math.max(time - (this.lastCallTime || time), 0);
+    // this.lastCallTime = time;
 
     // const maxCycles = Math.floor(MAX_CYCLES * (1.0 + diff));
     const maxCycles = Math.floor(MAX_CYCLES);
@@ -74,8 +74,7 @@ export class Emulation {
       event = this.gb.run_till_event(maxCycles);
 
       if (event == EVENT_VBLANK) {
-        // this.drawScreen();
-        if (!this.screenPtr) {
+        if (this.screenPtr !== this.gb.screen()) {
           this.screenPtr = this.gb.screen();
 
           this.screen = new Uint8ClampedArray(
@@ -86,6 +85,16 @@ export class Emulation {
 
           this.imageData = ctx.createImageData(WIDTH, HEIGHT);
         }
+
+        // this.screenPtr = this.gb.screen();
+
+        // this.screen = new Uint8ClampedArray(
+        //   memory.buffer,
+        //   this.screenPtr,
+        //   WIDTH * HEIGHT * CHANNELS
+        // );
+
+        // this.imageData = ctx.createImageData(WIDTH, HEIGHT);
 
         this.imageData.data.set(this.screen);
       }
@@ -101,7 +110,8 @@ export class Emulation {
   }
 
   drawScreen() {
-    ctx.putImageData(this.imageData, 0, 0, 0, 0, WIDTH, HEIGHT);
+    this.imageData &&
+      ctx.putImageData(this.imageData, 0, 0, 0, 0, WIDTH, HEIGHT);
   }
 
   playAudio() {

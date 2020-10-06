@@ -166,6 +166,10 @@ impl SquareWave {
     }
 
     pub fn volume_tick(&mut self) {
+        if !self.enabled {
+            return;
+        }
+
         self.volume_counter -= 1;
 
         if self.volume_counter == 0 {

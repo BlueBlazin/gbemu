@@ -1407,8 +1407,22 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn test_blargg() {
+    fn test_rom() {
         let rom = fs::read("roms/<example_rom>").unwrap();
+
+        let mut cpu = Cpu::new(rom);
+        cpu.simulate_bootrom();
+
+        println!("Starting");
+
+        loop {
+            cpu.tick();
+        }
+    }
+
+    #[test]
+    fn test_blargg() {
+        let rom = fs::read("roms/interrupt_time.gb").unwrap();
 
         let mut cpu = Cpu::new(rom);
         cpu.simulate_bootrom();
