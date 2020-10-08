@@ -33,3 +33,12 @@ A Gameboy emulator written in Rust, compiled to WebAssembly, and running in the 
 ![25](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/25.png)
 ![26](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/26.png)
 ![27](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/27.png)
+
+## Tests
+
+![1](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/blargg/1.png)
+![2](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/blargg/2.png)
+![3](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/blargg/3.png)
+![4](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/blargg/4.png)
+![5](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/blargg/5.png)
+![6](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/blargg/6.png)
