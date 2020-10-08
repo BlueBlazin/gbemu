@@ -65,7 +65,7 @@ I am grateful to the direct and indirect help of several people to make this emu
 
 **Binjigb:** I used this as a reference for implementing some of the frontend logic. This includes an event based emulation driver, as well as some WASM stuff.
 
-**WasmBoy:** I want to thank the torch2424, the creator of WasmBoy for initially suggesting using an event based emulation driver as well as offering advice on switching from RAF to setTimeout.
+**WasmBoy:** I want to thank torch2424, the creator of WasmBoy for initially suggesting using an event based emulation driver as well as offering advice on switching from RAF to setTimeout.
 
 **gbdev:** I wouldn't have been able to complete the emulator without the daily help I got from members of the gbdev discord community.
 
