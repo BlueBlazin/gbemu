@@ -44,7 +44,7 @@ Visit the website, load your ROM and begin playing! The emulator uses:
 ![26](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/26.png)
 ![27](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/27.png)
 
-_Note_: These images were taken with a different colorization algorithm. The current version of the emulator uses a slightly different algorithm for efficiency and colors will appear different.
+_Note: These images were taken with a different colorization algorithm. The current version of the emulator uses a slightly different algorithm for efficiency and colors will appear different._
 
 ## Tests
 
@@ -59,7 +59,7 @@ _Note_: These images were taken with a different colorization algorithm. The cur
 
 I am grateful to the direct and indirect help of several people to make this emulator possible.
 
-**SameBoy:** Initially my emulator didn't refer much to SameBoy but as accuracy became of interest I heavily copied some of SameBoy's way of doing things.
+**SameBoy:** Initially my emulator didn't refer much to SameBoy but as accuracy became of interest I heavily copied some of SameBoy's way of doing things. In particular I want to thank the creator of SameBoy (The Great) LIJI, whom I hounded with questions almost daily on the gbdev discord.
 
 **Binjigb:** I used this as a reference for implementing some of the frontend logic. This includes an event based emulation driver, as well as some WASM stuff.
 
