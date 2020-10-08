@@ -1,5 +1,7 @@
 # GBEmu
 
+![cover](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/cover.png)
+
 A Gameboy emulator written in Rust, compiled to WebAssembly, and running in the browser.
 
 ## Usage
