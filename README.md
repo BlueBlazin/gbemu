@@ -5,9 +5,10 @@ A Gameboy emulator written in Rust, compiled to WebAssembly, and running in the 
 ## Usage
 
 Visit the website, load your ROM and begin playing! The emulator uses:
-**Arrow keys** for Up, Down, Left, and Right
-**A** and **S** for A and B
-**Enter** and **Space** for Start and Select.
+
+- **Arrow keys** for Up, Down, Left, and Right
+- **A** and **S** for A and B
+- **Enter** and **Space** for Start and Select.
 
 ## Screenshots
 
