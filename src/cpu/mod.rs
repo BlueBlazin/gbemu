@@ -1419,3 +1419,4 @@ mod tests {
             cpu.tick();
         }
     }
+}
