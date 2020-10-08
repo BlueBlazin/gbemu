@@ -1,8 +1,13 @@
 # GBEmu
 
-**Work In Progress**
-
 A Gameboy emulator written in Rust, compiled to WebAssembly, and running in the browser.
+
+## Usage
+
+Visit the website, load your ROM and begin playing! The emulator uses:
+**Arrow keys** for Up, Down, Left, and Right
+**A** and **S** for A and B
+**Enter** and **Space** for Start and Select.
 
 ## Screenshots
 
@@ -42,3 +47,17 @@ A Gameboy emulator written in Rust, compiled to WebAssembly, and running in the 
 ![4](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/blargg/4.png)
 ![5](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/blargg/5.png)
 ![6](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/blargg/6.png)
+
+## Attributions
+
+I am grateful to the direct and indirect help of several people to make this emulator possible.
+
+**SameBoy:** Initially my emulator didn't refer much to SameBoy but as accuracy became of interest I heavily copied some of SameBoy's way of doing things.
+
+**Binjigb:** I used this as a reference for implementing some of the frontend logic. This includes an event based emulation driver, as well as some WASM stuff.
+
+**WasmBoy:** I want to thank the torch2424, the creator of WasmBoy for initially suggesting using an event based emulation driver as well as offering advice on switching from RAF to setTimeout.
+
+**gbdev:** I wouldn't have been able to complete the emulator without the daily help I got from members of the gbdev discord community.
+
+**Pandocs, Blargg, Mooneye-gb, AntonioND:** These docs and tests were invaluable!
