@@ -44,6 +44,8 @@ Visit the website, load your ROM and begin playing! The emulator uses:
 ![26](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/26.png)
 ![27](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/27.png)
 
+_Note_: These images were taken with a different colorization algorithm. The current version of the emulator uses a slightly different algorithm for efficiency and colors will appear different.
+
 ## Tests
 
 ![1](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/blargg/1.png)
