@@ -61,7 +61,7 @@ _Note: These images were taken with a different colorization algorithm. The curr
 
 I am grateful to the direct and indirect help of several people to make this emulator possible.
 
-**SameBoy:** Initially my emulator didn't refer much to SameBoy but as accuracy became of interest I heavily copied some of SameBoy's way of doing things. In particular I want to thank the creator of SameBoy (The Great) LIJI, whom I hounded with questions almost daily on the gbdev discord.
+**SameBoy:** Initially my emulator didn't refer much to SameBoy but as accuracy became of interest I heavily copied some of SameBoy's way of doing things. In particular I want to thank the creator of SameBoy (The Great) LIJI, whom I hounded with questions almost daily on the gbdev discord server.
 
 **Binjigb:** I used this as a reference for implementing some of the frontend logic. This includes an event based emulation driver, as well as some WASM stuff.
 
