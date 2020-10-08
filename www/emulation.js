@@ -70,7 +70,7 @@ export class Emulation {
       event = this.gb.run_till_event(maxCycles);
 
       if (event == EVENT_VBLANK) {
-        if (!this.screenPtr) {
+        if (!this.screenPtr || this.screen.byteLength === 0) {
           this.screenPtr = this.gb.screen();
 
           this.screen = new Uint8ClampedArray(
