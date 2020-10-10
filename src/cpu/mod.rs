@@ -1,3 +1,5 @@
+// References: https://github.com/LIJI32/SameBoy/blob/master/Core/sm83_cpu.c
+
 pub mod opcodes;
 
 use crate::events::Event;
@@ -297,6 +299,10 @@ impl Cpu {
     }
 
     fn service_pending_interrupts(&mut self) {
+        // Reference: SameBoy: https://github.com/LIJI32/SameBoy/blob/master/Core/sm83_cpu.c
+        // This more accurate version of interrupt handling is copied from SameBoy.
+        // My original (and much simpler) version can still be found on earlier commits and
+        // other branches of the repository.
         self.halted = false;
 
         self.sp = self.sp.wrapping_sub(1);

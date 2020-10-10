@@ -1,3 +1,5 @@
+// References: https://github.com/torch2424/wasmboy/tree/master/lib/audio
+
 pub mod noise;
 pub mod queue;
 pub mod square;

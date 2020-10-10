@@ -1,3 +1,13 @@
+// References:
+//  - Ultimate Gameboy Talk: https://www.youtube.com/watch?v=HyzD8pNlpwI
+//  - Nitty Gritty Gameboy Cycle Timing:
+//      http://blog.kevtris.org/blogfiles/Nitty%20Gritty%20Gameboy%20VRAM%20Timing.txt
+//  - SameBoy: https://github.com/LIJI32/SameBoy/blob/master/Core/display.c
+// To implement the Pixel FIFO, I have pretty much copied (a simplified version of) SameBoy's
+// pixel pipeline and adapted it here. Some of my (incomplete) notes can be found
+// in sameboy_pixel_pipeline.md. I also consulted LIJI and got advice/help from him and
+// several others.
+
 pub mod registers;
 pub mod tiles;
 

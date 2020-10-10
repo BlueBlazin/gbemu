@@ -67,9 +67,6 @@ impl Default for Hdma {
     }
 }
 
-/// Memory Management Unit (MMU)
-/// The MMU is responsible for all basic memory operations
-/// as well as memory virtualization.
 pub struct Mmu {
     pub bootrom: Bootrom,
     pub cartridge: Cartridge,
