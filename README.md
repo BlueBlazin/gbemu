@@ -69,4 +69,4 @@ I am grateful to the direct and indirect help of several people to make this emu
 
 **gbdev:** I wouldn't have been able to complete the emulator without the daily help I got from members of the gbdev discord community.
 
-**Pandocs, Blargg, Mooneye-gb, AntonioND, matcurrie:** These docs and tests were invaluable!
+**Pandocs, Blargg, Mooneye-gb, AntonioND, mattcurrie:** These docs and tests were invaluable!
