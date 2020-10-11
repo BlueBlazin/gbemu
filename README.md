@@ -16,6 +16,17 @@ Visit the website, load your ROM and begin playing! The emulator uses:
 - **A** and **S** for A and B
 - **Enter** and **Space** for Start and Select.
 
+## Build
+
+To try it out locally:
+
+```sh
+$ cd www
+$ make
+```
+
+The emulator will be running at `localhost:8080`.
+
 ## Screenshots
 
 ![3](https://raw.githubusercontent.com/BlueBlazin/gbemu/master/screenshots/3.png)
