@@ -1,3 +1,5 @@
+
+
 # GBEmu
 
 https://gbemu.netlify.app/
@@ -22,6 +24,7 @@ To try it out locally:
 
 ```sh
 $ cd www
+$ npm install
 $ make
 ```
 
